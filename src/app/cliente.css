@@ -1,0 +1,106 @@
+/* ------------------------------------------------------------- área do cliente */
+.cliente-area { min-height: 100dvh; display: flex; flex-direction: column; }
+.cliente-ola { color: var(--texto-2); font-size: 14px; margin-right: 6px; }
+.cliente-corpo { flex: 1; width: 100%; max-width: 1180px; margin: 0 auto; padding: 18px 16px 40px; }
+.cliente-painel { display: flex; flex-direction: column; gap: 16px; }
+.cliente-cabeca { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: space-between; }
+.cliente-cabeca .dica svg { vertical-align: -1px; }
+.cliente-cartao { border-radius: 20px; padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+.cliente-lista { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+.cliente-pedido { text-align: left; border-radius: 16px; padding: 14px; display: flex; flex-direction: column; gap: 4px; cursor: pointer; border: 1px solid var(--borda); color: var(--texto); font: inherit; }
+.cliente-pedido:hover { border-color: var(--ouro); }
+.cliente-pedido .dica { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cliente-pedido-topo { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cliente-detalhe { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.cliente-detalhe > .cliente-cartao { width: 100%; }
+.cliente-mapa { height: 320px; border-radius: 16px; overflow: hidden; position: relative; }
+.cliente-mapa > * { position: absolute; inset: 0; }
+.cliente-pagar { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: 14px; border: 1px solid #38bdf8; background: color-mix(in srgb, #38bdf8 10%, transparent); color: var(--texto); }
+.cliente-pagar svg { color: #38bdf8; flex: none; margin-top: 2px; }
+.cliente-codigo { margin: 0; font-size: 15px; }
+.cliente-codigo strong { color: var(--ouro); font-size: 20px; letter-spacing: 2px; margin: 0 6px; }
+.cliente-paradas { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.cliente-paradas li { display: flex; gap: 10px; align-items: flex-start; }
+.cliente-paradas li.feita { opacity: 0.6; }
+.cliente-novo { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.cliente-lado { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 16px; }
+.cliente-novo textarea, .cliente-novo input[type="datetime-local"] { width: 100%; }
+.vazio-cliente { align-items: center; text-align: center; padding: 40px 18px; color: var(--texto-2); }
+@media (max-width: 860px) {
+  .cliente-novo { grid-template-columns: 1fr; }
+  .cliente-lado { position: static; }
+  .cliente-ola { display: none; }
+}
+
+/* ---------------------------------------------------------------- chaves PIX */
+.linha-pix { display: flex; align-items: center; gap: 10px; padding: 10px 6px 10px 12px; border-radius: 14px; border: 1px solid var(--borda); background: var(--vidro-sutil); }
+.linha-pix.principal { border-color: color-mix(in srgb, var(--ouro) 55%, transparent); background: color-mix(in srgb, var(--ouro) 8%, transparent); }
+.linha-pix-icone { display: grid; place-items: center; width: 34px; height: 34px; flex: none; border-radius: 11px; color: var(--ouro); background: color-mix(in srgb, var(--ouro) 14%, transparent); }
+.linha-pix-texto { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.linha-pix-texto strong { font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.linha-pix-texto small { font-size: 12px; color: var(--texto-3); display: inline-flex; align-items: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nova-pix { display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
+.nova-pix .dica svg { vertical-align: -2px; }
+
+
+/* ============================================================= renascimento: peças comuns */
+.titulo-linha { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.titulo-linha > :first-child { flex: 1; min-width: 0; }
+.titulo-linha h3 svg, h3.display svg { vertical-align: -3px; margin-right: 4px; color: var(--ouro); }
+.grade-campos { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+.grade-igual { grid-template-columns: 1fr 1fr !important; }
+.filtro-n, .chip-n, .aba-n { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 6px; border-radius: 99px;
+  font-size: 10.5px; font-weight: 800; background: var(--ouro); color: #0b0b0d; font-variant-numeric: tabular-nums; }
+.aba-n { margin-left: 4px; }
+.tabela-clicavel tbody tr, tr.tabela-clicavel { cursor: pointer; }
+.tabela-clicavel tbody tr:hover td { background: color-mix(in srgb, var(--ouro) 6%, transparent); }
+.tabela tr.ativo td { background: color-mix(in srgb, var(--ouro) 12%, transparent); }
+.chip.ativo { border-color: var(--ouro); background: color-mix(in srgb, var(--ouro) 14%, transparent); color: var(--texto); }
+a.chip { text-decoration: none; }
+
+/* orçamento e cálculo linha a linha */
+.orcamento { display: flex; flex-direction: column; gap: 2px; }
+.orcamento-linha { display: flex; align-items: baseline; gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--borda); font-size: 14px; }
+.orcamento-linha > span { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.orcamento-linha small { color: var(--texto-3); font-size: 12px; }
+.orcamento-linha strong { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.orcamento-linha.pct strong { color: var(--ouro); }
+.orcamento-linha.total { border-bottom: 0; padding-top: 10px; font-size: 16px; }
+.orcamento-linha.total strong { font-size: 20px; color: var(--ouro); }
+
+/* itens do pedido */
+.item-form { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 14px; border: 1px solid var(--borda); background: var(--vidro-sutil); }
+.item-linha { display: grid; grid-template-columns: 1fr minmax(140px, 0.6fr) auto; gap: 8px; align-items: center; }
+.item-numeros { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 8px; }
+.item-numeros label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--texto-3); text-transform: uppercase; letter-spacing: 0.05em; }
+.item-numeros input, .item-numeros select { width: 100%; min-width: 0; }
+.alerta-perigo { display: flex; gap: 8px; align-items: center; margin: 0; padding: 10px 12px; border-radius: 12px; font-size: 13px;
+  color: var(--texto); background: color-mix(in srgb, var(--vermelho) 12%, transparent); border: 1px solid color-mix(in srgb, var(--vermelho) 40%, transparent); }
+.alerta-perigo svg { color: var(--vermelho); flex: none; }
+.pedido-valor { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+.pedido-valor .campo { flex: 1; min-width: 140px; }
+.pedido-valor .passo-campo { display: flex; align-items: center; gap: 6px; }
+.pedido-valor .passo-campo input { flex: 1; min-width: 0; }
+@media (max-width: 640px) {
+  .item-linha { grid-template-columns: 1fr auto; }
+  .item-linha select { grid-column: 1 / -1; grid-row: 2; }
+  .grade-igual { grid-template-columns: 1fr !important; }
+}
+
+/* ============================================================= cliente: renascimento */
+.abas-cliente { grid-template-columns: repeat(4, 1fr); max-width: 640px; }
+.abas-cliente button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.cliente-coluna { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.tipos-pedido { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }
+.tipo-pedido { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 12px; border-radius: 14px; border: 1px solid var(--borda);
+  background: var(--vidro-sutil); color: var(--texto); font: inherit; cursor: pointer; }
+.tipo-pedido small { color: var(--texto-3); font-size: 12px; }
+.tipo-pedido.ativo { border-color: var(--ouro); background: color-mix(in srgb, var(--ouro) 10%, var(--vidro-sutil)); }
+.progresso { height: 5px; border-radius: 99px; background: var(--vidro-sutil); overflow: hidden; margin-top: 4px; }
+.progresso i { display: block; height: 100%; background-image: linear-gradient(90deg, var(--ouro-claro), var(--ouro)); border-radius: 99px; transition: width 0.4s; }
+.itens-lista { display: flex; flex-wrap: wrap; gap: 6px; }
+.dados-conta { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.dados-conta > div { display: flex; flex-direction: column; gap: 3px; padding: 12px; border-radius: 14px; background: var(--vidro-sutil); border: 1px solid var(--borda); }
+.dados-conta strong { font-size: 14.5px; overflow-wrap: anywhere; }
+.titulo-linha .rotulo { margin: 0; }
+@media (max-width: 640px) { .abas-cliente { grid-template-columns: repeat(2, 1fr); } }
