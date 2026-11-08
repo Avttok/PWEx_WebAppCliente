@@ -4,6 +4,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import "./globals.css";
 import "./cliente.css";
 import { ProvedorTema, scriptTema } from "@/features/tema/tema";
+import { RolagemLateral } from "@/features/ui/RolagemLateral";
 
 export const metadata: Metadata = {
   title: "PW Express · Cliente",
@@ -29,6 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <ProvedorTema>{children}</ProvedorTema>
+        <RolagemLateral />
       </body>
     </html>
   );

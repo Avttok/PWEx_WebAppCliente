@@ -1,64 +1,113 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
-import { Heart, LogOut } from "lucide-react";
+import { Eye, FlaskConical, Heart, Hourglass, LogOut } from "lucide-react";
 import { sair, supabase } from "@/lib/supabase/client";
 import { LoginForm } from "@/features/auth/LoginForm";
 import { Logo } from "@/features/marca/Logo";
 import { BotaoTema } from "@/features/tema/BotaoTema";
 import { Toasts } from "@/features/ui/toast";
+import { CriarConta } from "./CriarConta";
 
-type Acesso = "carregando" | "anonimo" | "negado" | "cliente" | "gestor";
+interface Acesso {
+  tipo: "cliente" | "gestor" | "cadastro" | "nenhum";
+  nome?: string; empresa_id?: string | null; empresa_nome?: string | null; teste?: boolean; gestor?: boolean;
+  status?: "pendente" | "aprovado" | "recusado"; motivo?: string | null;
+  clientes?: { id: string; nome: string; teste: boolean }[];
+}
+type Estado = { fase: "carregando" } | { fase: "anonimo" } | { fase: "logado"; a: Acesso };
 
-/** Área do cliente: entra, pede, acompanha e vê as faturas. Contas de gestor vão para o painel delas. */
+/**
+ * Área do cliente: entra, pede, acompanha e vê as faturas.
+ * Gestor/Dev entram também e escolhem de qual cliente querem ver o site (para testar tudo).
+ */
 export function AreaCliente({ children }: { children: ReactNode }) {
-  const [acesso, setAcesso] = useState<Acesso>("carregando");
-  const [nome, setNome] = useState("");
+  const [estado, setEstado] = useState<Estado>({ fase: "carregando" });
+  const [cadastrando, setCadastrando] = useState(false);
+  const [modoCadastro, setModoCadastro] = useState<string>("desligado");
+  const [versao, setVersao] = useState(0); // recria o painel ao trocar de cliente
+
+  const verificar = useCallback(async (s: Session | null) => {
+    if (!s) return setEstado({ fase: "anonimo" });
+    const { data } = await supabase().rpc("meu_acesso_cliente");
+    setEstado({ fase: "logado", a: (data as Acesso | null) ?? { tipo: "nenhum" } });
+  }, []);
 
   useEffect(() => {
     const sb = supabase();
-    async function verificar(s: Session | null) {
-      if (!s) return setAcesso("anonimo");
-      const { data } = await sb.rpc("meu_perfil");
-      const d = data as { nome?: string; papeis?: string[] } | null;
-      setNome(d?.nome ?? s.user.email?.split("@")[0] ?? "");
-      const p = d?.papeis ?? [];
-      if (p.includes("cliente")) setAcesso("cliente");
-      else if (p.includes("gestor") || p.includes("dev")) setAcesso("gestor");
-      else setAcesso("negado");
-    }
     sb.auth.getSession().then(({ data }) => verificar(data.session));
     const { data } = sb.auth.onAuthStateChange((ev, s) => { if (ev === "SIGNED_IN" || ev === "SIGNED_OUT") verificar(s); });
+    // o cadastro pelo site está aberto? (pergunta ao servidor do gestor)
+    const base = (process.env.NEXT_PUBLIC_SITE_GESTOR_URL ?? "").replace(/\/$/, "");
+    if (base) fetch(`${base}/api/cadastro`).then((r) => r.json()).then((j: { modo?: string }) => setModoCadastro(j.modo ?? "desligado")).catch(() => setModoCadastro("desligado"));
     return () => data.subscription.unsubscribe();
-  }, []);
+  }, [verificar]);
 
-  if (acesso === "carregando") return <main className="tela-login"><p className="subtitulo">Carregando…</p></main>;
-  if (acesso === "anonimo") return <LoginForm />;
-  if (acesso === "negado" || acesso === "gestor")
+  async function escolherCliente(id: string) {
+    await supabase().rpc("entrar_como_cliente", { p_empresa: id || null });
+    const { data: s } = await supabase().auth.getSession();
+    await verificar(s.session);
+    setVersao((v) => v + 1);
+  }
+
+  if (estado.fase === "carregando") return <main className="tela-login"><p className="subtitulo">Carregando…</p></main>;
+  if (estado.fase === "anonimo") {
+    if (cadastrando) return <CriarConta modo={modoCadastro} onVoltar={() => setCadastrando(false)} />;
+    return <LoginForm rodape={modoCadastro !== "desligado"
+      ? <p className="dica" style={{ textAlign: "center", margin: 0 }}>Ainda não tem conta? <button type="button" className="link-cadastro" onClick={() => setCadastrando(true)}>Criar conta da empresa</button></p>
+      : null} />;
+  }
+
+  const a = estado.a;
+  const comoGestor = a.tipo === "gestor";
+  if (a.tipo === "cadastro" || a.tipo === "nenhum" || (comoGestor && !a.empresa_id)) {
     return (
       <main className="tela-login">
-        <div className="caixa-login vidro">
+        <div className="caixa-login vidro entrar">
           <Logo />
-          <p className="erro" style={{ textAlign: "center" }}>
-            {acesso === "gestor" ? "Esta é uma conta da equipe PW Express. Use o painel do gestor." : "Esta conta não tem acesso de cliente. Fale com a PW Express."}
-          </p>
-          {acesso === "gestor" && process.env.NEXT_PUBLIC_SITE_GESTOR_URL && <a className="botao-ouro" href={process.env.NEXT_PUBLIC_SITE_GESTOR_URL}>Abrir o painel do gestor</a>}
+          {a.tipo === "cadastro" && a.status === "pendente" && <>
+            <p className="cadastro-ok" style={{ color: "var(--ouro)" }}><Hourglass size={28} aria-hidden /></p>
+            <p style={{ textAlign: "center", margin: 0 }}><strong>Cadastro em análise</strong></p>
+            <p className="dica" style={{ textAlign: "center" }}>A PW Express está conferindo os dados de {a.nome}. Assim que liberar, você já pode pedir por aqui.</p>
+          </>}
+          {a.tipo === "cadastro" && a.status === "recusado" && <p className="erro" style={{ textAlign: "center" }}>O cadastro não foi aprovado{a.motivo ? `: ${a.motivo}` : ""}. Fale com a PW Express.</p>}
+          {a.tipo === "nenhum" && <p className="erro" style={{ textAlign: "center" }}>Esta conta não tem acesso de cliente. Fale com a PW Express.</p>}
+          {comoGestor && <>
+            <p style={{ textAlign: "center", margin: 0 }}><strong>Ver o site como um cliente</strong></p>
+            <p className="dica" style={{ textAlign: "center", margin: 0 }}>Você é da equipe: escolha o cliente para testar o site como ele (pedidos de cliente de teste saem como teste).</p>
+            <select value="" onChange={(e) => escolherCliente(e.target.value)}>
+              <option value="">Escolha o cliente…</option>
+              {(a.clientes ?? []).map((c) => <option key={c.id} value={c.id}>{c.teste ? "🧪 " : ""}{c.nome}</option>)}
+            </select>
+            {process.env.NEXT_PUBLIC_SITE_GESTOR_URL && <a className="botao-texto" href={process.env.NEXT_PUBLIC_SITE_GESTOR_URL}>Voltar ao painel do gestor</a>}
+          </>}
           <button className="botao-texto" onClick={() => sair()}><LogOut size={15} aria-hidden /> Sair</button>
         </div>
       </main>
     );
+  }
 
   return (
     <div className="cliente-area">
       <header className="topo vidro">
         <a href="/" aria-label="PW Express, início"><Logo /></a>
         <span className="espaco" />
-        <span className="cliente-ola">Olá, <strong>{nome.split(" ")[0]}</strong></span>
+        {a.teste && <span className="selo selo-teste"><FlaskConical size={12} aria-hidden /> Teste</span>}
+        <span className="cliente-ola">Olá, <strong>{(a.nome ?? "").split(" ")[0]}</strong></span>
         <BotaoTema />
         <button className="botao-texto" onClick={() => sair()} title="Sair"><LogOut size={16} aria-hidden /> Sair</button>
       </header>
-      <main className="cliente-corpo">{children}</main>
+      {comoGestor && (
+        <div className="faixa-como">
+          <Eye size={14} aria-hidden /> Você está vendo o site como <strong>{a.empresa_nome}</strong>{a.teste ? " (teste)" : ""}.
+          <select value={a.empresa_id ?? ""} onChange={(e) => escolherCliente(e.target.value)} aria-label="Trocar de cliente">
+            {(a.clientes ?? []).map((c) => <option key={c.id} value={c.id}>{c.teste ? "🧪 " : ""}{c.nome}</option>)}
+          </select>
+          <button className="botao-texto" onClick={() => escolherCliente("")}>Sair do modo cliente</button>
+        </div>
+      )}
+      <main className="cliente-corpo" key={versao}>{children}</main>
       <footer className="rodape">
         Um projeto de irmão para irmão! <Heart size={13} aria-label="com amor" className="coracao" fill="currentColor" />
       </footer>

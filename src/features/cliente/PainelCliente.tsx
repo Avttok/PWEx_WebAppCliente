@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ArrowLeft, Boxes, Building2, CalendarClock, CheckCircle2, Clock, CreditCard, FileText, FlaskConical, Lock, MapPinned, Package, PackagePlus, Plus, QrCode,
-  Receipt, Trash2, Truck, UserRound, Wallet, X, Zap,
+  ArrowLeft, Bookmark, BookmarkPlus, Boxes, Building2, CalendarClock, CheckCircle2, Clock, CreditCard, FileText, FlaskConical, KeyRound, Lock, MapPinned, Package,
+  PackagePlus, Plus, QrCode, Receipt, Truck, UserRound, Wallet, X, Zap,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
 import { geo, type Referencia, type Rota } from "@/features/geo";
@@ -13,7 +13,10 @@ import { MapaCorridas, type PinoParada } from "@/features/corridas/MapaCorridas"
 import { formatarDuracao, formatarKm } from "@/features/corridas/tipos";
 import { paraCampo, sugestaoHorario } from "@/features/corridas/planejadas";
 import { toast } from "@/features/ui/toast";
-import { moedaBr, quando, traduzir, type Orcamento } from "@/features/pedidos/tipos";
+import { moedaBr, quando, traduzir, type Categoria, type Orcamento } from "@/features/pedidos/tipos";
+import { ItensPedido, faltandoItens, itensParaEnvio, novoItem, type ItemForm } from "@/features/pedidos/ItensPedido";
+import { ListaOrdenavel } from "@/features/ui/ListaOrdenavel";
+import { Icone } from "@/features/ui/icones";
 
 // ------------------------------------------------------------------ dados
 
@@ -21,9 +24,15 @@ interface Conta {
   id: string; nome: string; tipo: "pj" | "pf"; documento: string | null; telefone: string | null; email: string | null;
   endereco: string | null; lat: number | null; lng: number | null; instrucoes_coleta: string | null;
   pode_express: boolean; ve_ao_vivo: boolean; cobranca: "credito" | "pre_pago"; fatura_ciclo: string; metodos: string[]; antecedencia_min: number;
-  tipos_pedido: { chave: string; nome: string; descricao: string | null }[];
-  categorias: { id: string; nome: string; descricao: string | null; perigoso: boolean; classe_risco: string | null; fragil: boolean }[];
-  em_aberto: number;
+  tipos_pedido: { chave: string; nome: string; descricao: string | null; icone?: string | null }[];
+  categorias: Categoria[];
+  em_aberto: number; icone?: string | null; teste?: boolean;
+  pode_modelos?: boolean; pode_cancelar?: boolean; troca_senha?: boolean; categoria_obrigatoria?: boolean;
+}
+interface Modelo { id: string; nome: string; icone: string | null; dados: DadosModelo; usos: number; usado_em: string | null }
+interface DadosModelo {
+  tipo_pedido?: string; urgente?: boolean; observacoes?: string;
+  pontos?: Omit<Ponto, "chave">[]; itens?: Omit<ItemForm, "chave">[];
 }
 type StatusP = "recebido" | "aprovado" | "roteirizado" | "em_rota" | "concluido" | "cancelado" | "recusado";
 interface PedidoC {
@@ -31,7 +40,7 @@ interface PedidoC {
   orcamento: Orcamento | null; cobranca: "credito" | "pre_pago"; pagamento_status: string; pagamento_metodo: string | null; fatura_id: string | null;
   observacoes: string | null; recusa_motivo: string | null; criado_em: string; concluido_em: string | null; cancelado_em: string | null;
   pontos: { id: string; tipo: "coleta" | "entrega"; endereco: string; lat: number; lng: number; contato_nome: string | null; status: string; concluido_em: string | null; recebedor_nome: string | null }[];
-  itens: { descricao: string; quantidade: number; peso_kg: number | null; categoria: string | null; perigoso: boolean }[];
+  itens: { descricao: string; quantidade: number; peso_kg: number | null; categoria: string | null; categoria_id?: string | null; icone?: string | null; perigoso: boolean }[];
   motoboys: string[]; codigos: string[];
 }
 interface FaturaC {
@@ -170,7 +179,7 @@ function DetalhePedido({ pedido: p, conta, onVoltar, onMudou }: { pedido: Pedido
     onMudou();
   }
   const pinos: PinoParada[] = p.pontos.map((x, i) => ({ chave: x.id, lat: x.lat, lng: x.lng, tipo: x.tipo, rotulo: String(i + 1), concluida: x.status === "concluido" }));
-  const podeCancelar = ["recebido", "aprovado", "roteirizado"].includes(p.status);
+  const podeCancelar = conta.pode_cancelar !== false && ["recebido", "aprovado", "roteirizado"].includes(p.status);
 
   return (
     <div className="cliente-detalhe">
@@ -189,7 +198,7 @@ function DetalhePedido({ pedido: p, conta, onVoltar, onMudou }: { pedido: Pedido
           <div className="cliente-pagar">
             <Lock size={18} aria-hidden />
             <div><strong>Aguardando pagamento{p.pagamento_metodo ? ` (${p.pagamento_metodo === "pix" ? "PIX" : "cartão"})` : ""}</strong>
-              <p className="dica" style={{ margin: 0 }}>O pedido sai depois de pago. Enquanto o pagamento online não é ligado, a PW Express confirma o recebimento por aqui.</p></div>
+              <p className="dica" style={{ margin: 0 }}>O pedido sai assim que o pagamento for confirmado.</p></div>
           </div>
         )}
         {p.codigos.length > 0 && <p className="cliente-codigo">Código de entrega: <strong>{p.codigos.join(" · ")}</strong> <span className="dica">passe só para quem vai receber</span></p>}
@@ -207,15 +216,14 @@ function DetalhePedido({ pedido: p, conta, onVoltar, onMudou }: { pedido: Pedido
         {p.itens.length > 0 && (
           <div className="itens-lista">
             {p.itens.map((it, i) => (
-              <span key={i} className="chip">{it.perigoso && <FlaskConical size={12} style={{ color: "var(--vermelho)" }} aria-label="Perigoso" />} {it.quantidade}× {it.descricao}{it.peso_kg ? ` · ${it.peso_kg} kg` : ""}</span>
+              <span key={i} className="chip">{it.perigoso ? <FlaskConical size={12} style={{ color: "var(--vermelho)" }} aria-label="Perigoso" /> : <Icone nome={it.icone} size={12} />} {it.quantidade}× {it.descricao}</span>
             ))}
           </div>
         )}
-        {p.orcamento && <details className="avancado"><summary>Como chegamos no valor</summary><Orcamento orc={p.orcamento} /></details>}
         <p className="dica" style={{ margin: 0 }}>
           {p.tipo === "planejado" ? `Agendado para ${quando(p.quando)}` : `Pedido em ${quando(p.criado_em)}`}
-          {p.motoboys.length ? ` · motoboy ${p.motoboys.map((n) => n.split(" ")[0]).join(", ")}` : ""}
-          {p.cobranca === "credito" ? (p.fatura_id ? " · já na fatura" : " · entra na próxima fatura") : p.pagamento_status === "pago" ? " · pago" : ""}
+          {p.motoboys.length ? ` · ${p.motoboys.map((n) => n.split(" ")[0]).join(", ")}` : ""}
+          {p.cobranca === "pre_pago" && p.pagamento_status === "pago" ? " · pago" : ""}
         </p>
         {podeCancelar && <button className="botao-perigo" onClick={cancelar}><X size={15} aria-hidden /> Cancelar pedido</button>}
       </div>
@@ -236,17 +244,25 @@ function Orcamento({ orc }: { orc: Orcamento }) {
 // ------------------------------------------------------------------ novo pedido
 
 interface Ponto { chave: string; tipo: "coleta" | "entrega"; endereco: string; lat: number | null; lng: number | null; contato_nome: string; contato_telefone: string; instrucoes: string; referencias: Referencia[] }
-interface Item { chave: string; descricao: string; categoria_id: string; quantidade: string; peso_kg: string; comprimento_cm: string; largura_cm: string; altura_cm: string; valor_declarado: string; coleta: string; entrega: string }
 let seq = 0;
 const ponto = (tipo: Ponto["tipo"], base: Partial<Ponto> = {}): Ponto => ({ chave: `p${++seq}`, tipo, endereco: "", lat: null, lng: null, contato_nome: "", contato_telefone: "", instrucoes: "", referencias: [], ...base });
-const item = (): Item => ({ chave: `i${++seq}`, descricao: "", categoria_id: "", quantidade: "1", peso_kg: "", comprimento_cm: "", largura_cm: "", altura_cm: "", valor_declarado: "", coleta: "", entrega: "" });
-const n = (s: string) => (s.trim() === "" ? null : Number(s.replace(",", ".")));
+
+/** Modelos (pedidos recorrentes) salvos pelo cliente: tudo pode ser mudado depois de carregar. */
+function useModelos(conta: Conta) {
+  const [modelos, setModelos] = useState<Modelo[]>([]);
+  const recarregar = useCallback(async () => {
+    if (conta.pode_modelos === false) return setModelos([]);
+    const { data } = await supabase().from("pedido_modelos").select("id,nome,icone,dados,usos,usado_em").eq("empresa_id", conta.id).order("usos", { ascending: false }).order("nome");
+    setModelos((data ?? []) as Modelo[]);
+  }, [conta.id, conta.pode_modelos]);
+  useEffect(() => { void recarregar(); }, [recarregar]);
+  return { modelos, recarregar };
+}
 
 function NovoPedido({ conta, onCriado }: { conta: Conta; onCriado: (id: string) => void }) {
-  const [pontos, setPontos] = useState<Ponto[]>(() => [
-    ponto("coleta", conta.endereco ? { endereco: conta.endereco, lat: conta.lat, lng: conta.lng, instrucoes: conta.instrucoes_coleta ?? "" } : {}), ponto("entrega"),
-  ]);
-  const [itens, setItens] = useState<Item[]>([item()]);
+  const coletaPadrao = (): Ponto => ponto("coleta", conta.endereco ? { endereco: conta.endereco, lat: conta.lat, lng: conta.lng, instrucoes: conta.instrucoes_coleta ?? "" } : {});
+  const [pontos, setPontos] = useState<Ponto[]>(() => [coletaPadrao(), ponto("entrega")]);
+  const [itens, setItens] = useState<ItemForm[]>([]);
   const [agendar, setAgendar] = useState(!conta.pode_express);
   const [horario, setHorario] = useState(() => paraCampo(sugestaoHorario(Math.max(60, conta.antecedencia_min))));
   const [tipoPedido, setTipoPedido] = useState(conta.tipos_pedido[0]?.chave ?? "padrao");
@@ -258,25 +274,20 @@ function NovoPedido({ conta, onCriado }: { conta: Conta; onCriado: (id: string) 
   const [escolhendo, setEscolhendo] = useState<string | null>(null);
   const [aberto, setAberto] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
+  const [modeloId, setModeloId] = useState<string | null>(null);
+  const [salvarComo, setSalvarComo] = useState<string | null>(null);
+  const { modelos, recarregar: recarregarModelos } = useModelos(conta);
 
   const atualizar = (k: string, d: Partial<Ponto>) => setPontos((l) => l.map((p) => (p.chave === k ? { ...p, ...d } : p)));
-  const mudarItem = (k: string, d: Partial<Item>) => setItens((l) => l.map((x) => (x.chave === k ? { ...x, ...d } : x)));
-  const coletas = pontos.map((p, i) => ({ p, i })).filter((x) => x.p.tipo === "coleta");
-  const entregas = pontos.map((p, i) => ({ p, i })).filter((x) => x.p.tipo === "entrega");
-  const ordenados = useMemo(() => [...pontos.filter((p) => p.tipo === "coleta"), ...pontos.filter((p) => p.tipo === "entrega")], [pontos]);
-  const chaveRota = ordenados.map((p) => `${p.lat},${p.lng}`).join("|");
+  const chaveRota = pontos.map((p) => `${p.lat},${p.lng}`).join("|");
   useEffect(() => {
-    const ok = ordenados.filter((p) => p.lat != null);
-    if (ok.length < 2 || ok.length !== ordenados.length) { setRota(null); return; }
+    const ok = pontos.filter((p) => p.lat != null);
+    if (ok.length < 2 || ok.length !== pontos.length) { setRota(null); return; }
     const t = setTimeout(async () => setRota(await geo.calcularRota(ok.map((p) => ({ lat: p.lat!, lng: p.lng! }))).catch(() => null)), 500);
     return () => clearTimeout(t);
   }, [chaveRota]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const dadosItens = itens.filter((x) => x.descricao.trim()).map((x) => ({
-    descricao: x.descricao.trim(), categoria_id: x.categoria_id || null, quantidade: Math.max(1, Math.round(n(x.quantidade) ?? 1)), peso_kg: n(x.peso_kg),
-    comprimento_cm: n(x.comprimento_cm), largura_cm: n(x.largura_cm), altura_cm: n(x.altura_cm), valor_declarado: n(x.valor_declarado),
-    coleta: x.coleta === "" ? null : Number(x.coleta), entrega: x.entrega === "" ? null : Number(x.entrega),
-  }));
+  const dadosItens = itensParaEnvio(itens, pontos.map((p) => p.chave));
   const quandoIso = agendar && horario ? new Date(horario).toISOString() : null;
   const chaveOrc = JSON.stringify([tipoPedido, urgente, quandoIso, rota?.distanciaM, pontos.map((p) => [p.tipo, p.lat, p.lng]), dadosItens]);
   useEffect(() => {
@@ -290,53 +301,109 @@ function NovoPedido({ conta, onCriado }: { conta: Conta; onCriado: (id: string) 
     return () => clearTimeout(t);
   }, [chaveOrc]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  function usarModelo(m: Modelo) {
+    const d = m.dados ?? {};
+    const novos = (d.pontos ?? []).map((p) => ponto(p.tipo, p));
+    // os itens apontam para os pontos pela posição no modelo
+    const chaves = novos.map((p) => p.chave);
+    const idx = (s: string) => (s === "" ? "" : chaves[Number(s)] ?? "");
+    setPontos(novos.length >= 2 ? novos : [coletaPadrao(), ponto("entrega")]);
+    setItens((d.itens ?? []).map((x) => ({ ...novoItem(x.categoria_id), ...x, coleta: idx(String(x.coleta ?? "")), entrega: idx(String(x.entrega ?? "")) })));
+    if (d.tipo_pedido && conta.tipos_pedido.some((t) => t.chave === d.tipo_pedido)) setTipoPedido(d.tipo_pedido);
+    setUrgente(Boolean(d.urgente));
+    setObs(d.observacoes ?? "");
+    setModeloId(m.id);
+    toast(`Modelo “${m.nome}” carregado. Mude o que precisar antes de enviar.`, "ok");
+  }
+
+  async function salvarModelo() {
+    const nome = (salvarComo ?? "").trim();
+    if (!nome) return;
+    const chaves = pontos.map((p) => p.chave);
+    const dados: DadosModelo = {
+      tipo_pedido: tipoPedido, urgente, observacoes: obs.trim() || undefined,
+      pontos: pontos.map(({ chave, ...p }) => { void chave; return p; }),
+      itens: itens.map(({ chave, ...x }) => { void chave; return { ...x, coleta: x.coleta ? String(chaves.indexOf(x.coleta)) : "", entrega: x.entrega ? String(chaves.indexOf(x.entrega)) : "" }; }),
+    };
+    const existente = modelos.find((m) => m.nome.toLowerCase() === nome.toLowerCase());
+    const { error } = existente
+      ? await supabase().from("pedido_modelos").update({ dados }).eq("id", existente.id)
+      : await supabase().from("pedido_modelos").insert({ empresa_id: conta.id, nome, dados });
+    if (error) return toast(traduzir(error.message), "erro");
+    setSalvarComo(null);
+    toast(existente ? `Modelo “${nome}” atualizado.` : `Modelo “${nome}” salvo. Ele aparece no topo do próximo pedido.`, "ok");
+    void recarregarModelos();
+  }
+
+  async function apagarModelo(m: Modelo) {
+    if (!confirm(`Apagar o modelo “${m.nome}”?`)) return;
+    const { error } = await supabase().from("pedido_modelos").delete().eq("id", m.id);
+    if (error) return toast(traduzir(error.message), "erro");
+    if (modeloId === m.id) setModeloId(null);
+    void recarregarModelos();
+  }
+
   async function enviar() {
     if (pontos.some((p) => p.lat == null)) return toast("Localize todos os endereços (escolha da lista ou marque no mapa).", "aviso");
-    if (itens.some((x) => !x.descricao.trim() && (x.peso_kg || x.categoria_id))) return toast("Diga o que é cada item.", "aviso");
+    if (conta.categoria_obrigatoria && itens.some((x) => !x.categoria_id)) return toast("Escolha o tipo de cada item.", "aviso");
+    const falta = faltandoItens(itens, conta.categorias);
+    if (falta) return toast(falta, "aviso");
     setEnviando(true);
     const { data, error } = await supabase().rpc("criar_pedido", { dados: {
+      como_cliente: true, modelo_id: modeloId,
       quando: quandoIso, urgente, tipo_pedido: tipoPedido, metodo: conta.cobranca === "pre_pago" ? metodo : null, observacoes: obs.trim() || null,
       distancia_m: rota?.distanciaM ?? null, pontos: pontos.map(({ chave, ...p }) => { void chave; return p; }), itens: dadosItens } });
     setEnviando(false);
     if (error) return toast(traduzir(error.message), "erro");
-    toast("Recebemos o seu pedido. Você acompanha tudo por aqui.", "ok", { titulo: "Pedido enviado" });
+    toast("Recebemos o seu pedido.", "ok", { titulo: "Pedido enviado" });
     onCriado(data as string);
   }
 
-  const pinos: PinoParada[] = pontos.filter((p) => p.lat != null).map((p, i) => ({ chave: p.chave, lat: p.lat!, lng: p.lng!, tipo: p.tipo, rotulo: String(i + 1) }));
+  const pinos: PinoParada[] = pontos.filter((p) => p.lat != null).map((p) => ({ chave: p.chave, lat: p.lat!, lng: p.lng!, tipo: p.tipo, rotulo: String(pontos.indexOf(p) + 1) }));
   const perigoso = dadosItens.some((x) => conta.categorias.find((k) => k.id === x.categoria_id)?.perigoso);
   return (
     <div className="cliente-novo">
       <div className="cliente-coluna">
+        {conta.pode_modelos !== false && (modelos.length > 0 || salvarComo != null) && (
+          <div className="cliente-cartao vidro">
+            <span className="rotulo"><Bookmark size={13} aria-hidden /> Meus modelos</span>
+            <div className="linha-chips modelos">
+              {modelos.map((m) => (
+                <span key={m.id} className={`chip modelo ${modeloId === m.id ? "ativo" : ""}`}>
+                  <button type="button" onClick={() => usarModelo(m)}><Icone nome={m.icone} padrao={Bookmark} size={13} /> {m.nome}</button>
+                  <button type="button" className="tirar" aria-label={`Apagar o modelo ${m.nome}`} onClick={() => apagarModelo(m)}><X size={12} /></button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="cliente-cartao vidro">
           <span className="rotulo">Quando</span>
           <div className="segmentado" style={{ gridTemplateColumns: "1fr 1fr" }}>
-            <button type="button" className={!agendar ? "ativo" : ""} disabled={!conta.pode_express} onClick={() => setAgendar(false)}><Zap size={14} aria-hidden /> Agora (Express)</button>
+            <button type="button" className={!agendar ? "ativo" : ""} disabled={!conta.pode_express} onClick={() => setAgendar(false)}><Zap size={14} aria-hidden /> Agora</button>
             <button type="button" className={agendar ? "ativo" : ""} onClick={() => setAgendar(true)}><CalendarClock size={14} aria-hidden /> Agendar</button>
           </div>
-          {!conta.pode_express && <p className="dica" style={{ margin: 0 }}><Lock size={11} aria-hidden /> Pedidos para agora são liberados pela PW Express. Agende com pelo menos {conta.antecedencia_min} min.</p>}
+          {!conta.pode_express && <p className="dica" style={{ margin: 0 }}><Lock size={11} aria-hidden /> Agende com pelo menos {conta.antecedencia_min} min.</p>}
           {agendar && <input type="datetime-local" value={horario} onChange={(e) => setHorario(e.target.value)} />}
           {conta.tipos_pedido.length > 1 && (
-            <>
-              <span className="rotulo">Tipo de pedido</span>
-              <div className="tipos-pedido">
-                {conta.tipos_pedido.map((t) => (
-                  <button key={t.chave} type="button" className={`tipo-pedido ${tipoPedido === t.chave ? "ativo" : ""}`} onClick={() => setTipoPedido(t.chave)}>
-                    <strong>{t.nome}</strong>{t.descricao && <small>{t.descricao}</small>}
-                  </button>
-                ))}
-              </div>
-            </>
+            <div className="tipos-pedido">
+              {conta.tipos_pedido.map((t) => (
+                <button key={t.chave} type="button" className={`tipo-pedido ${tipoPedido === t.chave ? "ativo" : ""}`} onClick={() => setTipoPedido(t.chave)} title={t.descricao ?? undefined}>
+                  <Icone nome={t.icone} size={16} /><strong>{t.nome}</strong>
+                </button>
+              ))}
+            </div>
           )}
-          <label className="opcao"><span><Zap size={14} aria-hidden style={{ color: "var(--vermelho)" }} /> Urgente<br /><span className="dica">Prioridade máxima (tem acréscimo).</span></span><input type="checkbox" role="switch" checked={urgente} onChange={(e) => setUrgente(e.target.checked)} /></label>
+          <label className="opcao"><span><Zap size={14} aria-hidden style={{ color: "var(--vermelho)" }} /> Urgente</span><input type="checkbox" role="switch" checked={urgente} onChange={(e) => setUrgente(e.target.checked)} /></label>
         </div>
 
         <div className="cliente-cartao vidro">
           <span className="rotulo">Endereços</span>
-          <p className="dica" style={{ margin: 0 }}>Uma ou várias coletas e entregas. Nós montamos as melhores rotas.</p>
-          {pontos.map((p, i) => (
-            <div key={p.chave} className={`parada-form ${p.tipo}`}>
+          <ListaOrdenavel itens={pontos} chave={(p) => p.chave} onMudar={setPontos} render={(p, i, alca) => (
+            <div className={`parada-form ${p.tipo}`}>
               <div className="parada-topo">
+                {pontos.length > 2 && alca}
                 <span className={`pino-mini ${p.tipo}`}>{i + 1}</span>
                 <select value={p.tipo} onChange={(e) => atualizar(p.chave, { tipo: e.target.value as Ponto["tipo"] })}><option value="coleta">Coleta</option><option value="entrega">Entrega</option></select>
                 <span className="espaco" />
@@ -359,7 +426,7 @@ function NovoPedido({ conta, onCriado }: { conta: Conta; onCriado: (id: string) 
                 </div>
               )}
             </div>
-          ))}
+          )} />
           <div className="linha-botoes">
             <button type="button" className="botao-texto" onClick={() => setPontos((l) => [...l, ponto("entrega")])}><Plus size={15} /> Entrega</button>
             <button type="button" className="botao-texto" onClick={() => setPontos((l) => [...l, ponto("coleta")])}><Plus size={15} /> Coleta</button>
@@ -367,36 +434,9 @@ function NovoPedido({ conta, onCriado }: { conta: Conta; onCriado: (id: string) 
         </div>
 
         <div className="cliente-cartao vidro">
-          <div className="titulo-linha"><span className="rotulo"><Boxes size={13} aria-hidden /> O que vai</span><button type="button" className="botao-texto" onClick={() => setItens((l) => [...l, item()])}><Plus size={15} /> Item</button></div>
-          <p className="dica" style={{ margin: 0 }}>Peso e medidas deixam o valor certinho (cobramos o maior entre o peso real e o tamanho da caixa).</p>
-          {itens.map((x) => (
-            <div key={x.chave} className="item-form">
-              <div className="item-linha">
-                <input placeholder="Ex.: 1 caixa de celular" value={x.descricao} onChange={(e) => mudarItem(x.chave, { descricao: e.target.value })} />
-                <select value={x.categoria_id} onChange={(e) => mudarItem(x.chave, { categoria_id: e.target.value })}>
-                  <option value="">Tipo de produto…</option>{conta.categorias.map((k) => <option key={k.id} value={k.id}>{k.perigoso ? "⚠ " : ""}{k.nome}</option>)}
-                </select>
-                {itens.length > 1 && <button type="button" className="icone" aria-label="Remover item" onClick={() => setItens((l) => l.filter((y) => y.chave !== x.chave))}><Trash2 size={14} /></button>}
-              </div>
-              <div className="item-numeros">
-                <label><span>Qtd.</span><input inputMode="numeric" value={x.quantidade} onChange={(e) => mudarItem(x.chave, { quantidade: e.target.value })} /></label>
-                <label><span>Peso (kg)</span><input inputMode="decimal" placeholder="cada" value={x.peso_kg} onChange={(e) => mudarItem(x.chave, { peso_kg: e.target.value })} /></label>
-                <label><span>C (cm)</span><input inputMode="decimal" value={x.comprimento_cm} onChange={(e) => mudarItem(x.chave, { comprimento_cm: e.target.value })} /></label>
-                <label><span>L (cm)</span><input inputMode="decimal" value={x.largura_cm} onChange={(e) => mudarItem(x.chave, { largura_cm: e.target.value })} /></label>
-                <label><span>A (cm)</span><input inputMode="decimal" value={x.altura_cm} onChange={(e) => mudarItem(x.chave, { altura_cm: e.target.value })} /></label>
-                <label><span>Valor (R$)</span><input inputMode="decimal" placeholder="declarado" value={x.valor_declarado} onChange={(e) => mudarItem(x.chave, { valor_declarado: e.target.value })} /></label>
-              </div>
-              {(coletas.length > 1 || entregas.length > 1) && (
-                <div className="item-numeros">
-                  <label><span>Sai de</span><select value={x.coleta} onChange={(e) => mudarItem(x.chave, { coleta: e.target.value })}>
-                    <option value="">Qualquer coleta</option>{coletas.map(({ p, i }) => <option key={p.chave} value={i}>{i + 1}. {p.endereco.split(",")[0] || "Coleta"}</option>)}</select></label>
-                  <label><span>Vai para</span><select value={x.entrega} onChange={(e) => mudarItem(x.chave, { entrega: e.target.value })}>
-                    <option value="">Todas as entregas</option>{entregas.map(({ p, i }) => <option key={p.chave} value={i}>{i + 1}. {p.endereco.split(",")[0] || "Entrega"}</option>)}</select></label>
-                </div>
-              )}
-            </div>
-          ))}
-          {perigoso && <p className="alerta-perigo"><FlaskConical size={14} aria-hidden /> Produto perigoso: embale e identifique. Ele vai com cuidado especial e pode ter taxa própria.</p>}
+          <span className="rotulo"><Boxes size={13} aria-hidden /> O que vai</span>
+          <ItensPedido itens={itens} onMudar={setItens} categorias={conta.categorias} pontos={pontos} semCategoria={!conta.categoria_obrigatoria} />
+          {perigoso && <p className="alerta-perigo"><FlaskConical size={14} aria-hidden /> Produto perigoso: embale e identifique.</p>}
           <textarea placeholder="Observações (opcional)" value={obs} maxLength={1000} onChange={(e) => setObs(e.target.value)} />
         </div>
       </div>
@@ -412,21 +452,27 @@ function NovoPedido({ conta, onCriado }: { conta: Conta; onCriado: (id: string) 
             <div><span className="rotulo">Tempo</span><strong>{formatarDuracao(rota?.duracaoS)}</strong></div>
             <div><span className="rotulo">Valor</span><strong className="texto-grad">{orc ? moedaBr(orc.total) : "—"}</strong></div>
           </div>
-          {orc ? <Orcamento orc={orc} /> : <p className="dica" style={{ margin: 0 }}>Localize os endereços para ver o valor.</p>}
+          {!orc && <p className="dica" style={{ margin: 0 }}>Localize os endereços para ver o valor.</p>}
           {conta.cobranca === "pre_pago" ? (
-            <>
-              <span className="rotulo">Pagamento</span>
-              <div className="segmentado" style={{ gridTemplateColumns: `repeat(${Math.max(1, conta.metodos.length)}, 1fr)` }}>
-                {conta.metodos.map((m) => (
-                  <button key={m} type="button" className={metodo === m ? "ativo" : ""} onClick={() => setMetodo(m)}>
-                    {m === "pix" ? <QrCode size={14} aria-hidden /> : <CreditCard size={14} aria-hidden />} {m === "pix" ? "PIX" : "Cartão"}
-                  </button>
-                ))}
-              </div>
-              <p className="dica" style={{ margin: 0 }}><Lock size={11} aria-hidden /> O pedido sai depois do pagamento confirmado.</p>
-            </>
-          ) : <p className="dica" style={{ margin: 0 }}><FileText size={11} aria-hidden /> Vai para a sua fatura ({CICLO[conta.fatura_ciclo] ?? "por ciclo"}). O valor pode ser revisado pela PW Express.</p>}
+            <div className="segmentado" style={{ gridTemplateColumns: `repeat(${Math.max(1, conta.metodos.length)}, 1fr)` }}>
+              {conta.metodos.map((m) => (
+                <button key={m} type="button" className={metodo === m ? "ativo" : ""} onClick={() => setMetodo(m)}>
+                  {m === "pix" ? <QrCode size={14} aria-hidden /> : <CreditCard size={14} aria-hidden />} {m === "pix" ? "PIX" : "Cartão"}
+                </button>
+              ))}
+            </div>
+          ) : <p className="dica" style={{ margin: 0 }}><FileText size={11} aria-hidden /> Vai para a sua fatura.</p>}
           <button className="botao-ouro" disabled={enviando} onClick={enviar}><Truck size={17} aria-hidden /> {enviando ? "Enviando…" : "Fazer pedido"}</button>
+          {conta.pode_modelos !== false && (salvarComo == null
+            ? <button type="button" className="botao-texto" onClick={() => setSalvarComo(modelos.find((m) => m.id === modeloId)?.nome ?? "")}><BookmarkPlus size={15} aria-hidden /> Salvar como modelo</button>
+            : (
+              <div className="linha-botoes">
+                <input autoFocus placeholder="Nome do modelo (ex.: Banco toda segunda)" value={salvarComo} maxLength={60} onChange={(e) => setSalvarComo(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") void salvarModelo(); }} style={{ flex: 1, minWidth: 0 }} />
+                <button type="button" className="botao-texto" disabled={!salvarComo.trim()} onClick={salvarModelo}><CheckCircle2 size={15} aria-hidden /> Salvar</button>
+                <button type="button" className="icone" aria-label="Cancelar" onClick={() => setSalvarComo(null)}><X size={14} /></button>
+              </div>
+            ))}
         </div>
       </div>
     </div>
@@ -493,18 +539,55 @@ function Faturas({ conta, faturas, pedidos }: { conta: Conta; faturas: FaturaC[]
 
 function MinhaConta({ conta }: { conta: Conta }) {
   return (
-    <div className="cliente-cartao vidro">
-      <h3 className="display" style={{ margin: 0 }}>{conta.nome}</h3>
-      <div className="dados-conta">
-        <div><span className="rotulo">{conta.tipo === "pf" ? "CPF" : "CNPJ"}</span><strong>{conta.documento ?? "—"}</strong></div>
-        <div><span className="rotulo">Telefone</span><strong>{conta.telefone ?? "—"}</strong></div>
-        <div><span className="rotulo">E-mail</span><strong>{conta.email ?? "—"}</strong></div>
-        <div><span className="rotulo">Coleta padrão</span><strong>{conta.endereco ?? "—"}</strong></div>
-        <div><span className="rotulo">Pedidos</span><strong>{conta.pode_express ? "Agora (Express) ou agendados" : "Agendados"}</strong></div>
-        <div><span className="rotulo">Pagamento</span><strong>{conta.cobranca === "credito" ? `Fatura ${CICLO[conta.fatura_ciclo] ?? ""}` : `Antecipado (${conta.metodos.map((m) => (m === "pix" ? "PIX" : "Cartão")).join(" ou ")})`}</strong></div>
-        <div><span className="rotulo">Acompanhar ao vivo</span><strong>{conta.ve_ao_vivo ? "Sim" : "Não"}</strong></div>
+    <>
+      <div className="cliente-cartao vidro">
+        <div className="cliente-pedido-topo"><span className="item-icone"><Icone nome={conta.icone} padrao={Building2} size={18} /></span><h3 className="display" style={{ margin: 0 }}>{conta.nome}</h3></div>
+        <div className="dados-conta">
+          <div><span className="rotulo">{conta.tipo === "pf" ? "CPF" : "CNPJ"}</span><strong>{formatarDoc(conta.documento)}</strong></div>
+          <div><span className="rotulo">Telefone</span><strong>{conta.telefone ?? "—"}</strong></div>
+          <div><span className="rotulo">E-mail</span><strong>{conta.email ?? "—"}</strong></div>
+          <div><span className="rotulo">Coleta padrão</span><strong>{conta.endereco ?? "—"}</strong></div>
+          <div><span className="rotulo">Pagamento</span><strong>{conta.cobranca === "credito" ? `Fatura ${CICLO[conta.fatura_ciclo] ?? ""}` : conta.metodos.map((m) => (m === "pix" ? "PIX" : "Cartão")).join(" ou ")}</strong></div>
+        </div>
+        <p className="dica" style={{ margin: 0 }}>Para mudar algum dado, fale com a PW Express.</p>
       </div>
-      <p className="dica" style={{ margin: 0 }}>Para mudar algum dado, fale com a PW Express.</p>
+      {conta.troca_senha !== false && <TrocarSenha />}
+    </>
+  );
+}
+
+function formatarDoc(d: string | null): string {
+  const n = (d ?? "").replace(/\D/g, "");
+  if (n.length === 14) return n.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
+  if (n.length === 11) return n.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4");
+  return d ?? "—";
+}
+
+function TrocarSenha() {
+  const [nova, setNova] = useState("");
+  const [conf, setConf] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const erro = nova && nova.length < 8 ? "A senha precisa ter pelo menos 8 caracteres." : conf && conf !== nova ? "As senhas não são iguais." : null;
+  async function salvar() {
+    if (erro || !nova) return;
+    setSalvando(true);
+    const { error } = await supabase().auth.updateUser({ password: nova });
+    setSalvando(false);
+    if (error) return toast(/same|different/i.test(error.message) ? "A senha nova precisa ser diferente da atual." : /weak|short/i.test(error.message) ? "Senha fraca demais. Use letras e números." : error.message, "erro");
+    setNova(""); setConf("");
+    toast("Senha trocada. Use a nova no próximo acesso.", "ok");
+  }
+  return (
+    <div className="cliente-cartao vidro">
+      <span className="rotulo"><KeyRound size={13} aria-hidden /> Trocar senha</span>
+      <div className="dados-conta">
+        <label className="campo"><span>Senha nova</span><input type="password" autoComplete="new-password" value={nova} onChange={(e) => setNova(e.target.value)} /></label>
+        <label className="campo"><span>Repita a senha</span><input type="password" autoComplete="new-password" value={conf} onChange={(e) => setConf(e.target.value)} /></label>
+      </div>
+      {erro && <p className="erro" style={{ margin: 0 }}>{erro}</p>}
+      <button className="botao-ouro" style={{ alignSelf: "flex-start" }} disabled={!nova || !conf || Boolean(erro) || salvando} onClick={salvar}>
+        <Lock size={15} aria-hidden /> {salvando ? "Salvando…" : "Salvar senha"}
+      </button>
     </div>
   );
 }

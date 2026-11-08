@@ -29,7 +29,9 @@ export function CampoReferencias({ valor, onMudar, lat, lng }: {
   async function sugerir() {
     if (lat == null || lng == null) return;
     setBuscando(true);
-    setSugestoes(await geo.pontosProximos(lat, lng));
+    let r = await geo.pontosProximos(lat, lng, 250);
+    if (!r.length) r = await geo.pontosProximos(lat, lng, 600);
+    setSugestoes(r);
     setBuscando(false);
   }
 
@@ -68,7 +70,7 @@ export function CampoReferencias({ valor, onMudar, lat, lng }: {
 
       {sugestoes && !cheio && (
         sugestoes.length === 0
-          ? <p className="dica" style={{ margin: 0 }}>Nenhum estabelecimento com nome encontrado por perto.</p>
+          ? <p className="dica" style={{ margin: 0 }}>Nada com nome até 600 m daqui. Aproxime o mapa nesse ponto e toque em “Sugerir próximos” de novo, ou escreva a referência acima.</p>
           : (
             <div className="referencias-sugestoes">
               {sugestoes.filter((s) => !jaTem(s.nome)).map((s) => (

@@ -15,10 +15,13 @@ export const ICONE_POI: Record<string, string> = {
   restaurant: "restaurante", fast_food: "restaurante", food_court: "restaurante", bar: "restaurante", pub: "restaurante",
   cafe: "cafe", bakery: "cafe", ice_cream: "cafe",
   fuel: "posto", bank: "banco", atm: "banco", place_of_worship: "igreja", lodging: "hotel",
-  police: "policia", post: "correio", car: "carro", car_repair: "carro", bus: "onibus",
+  police: "policia", post: "correio", car: "carro", car_repair: "carro",
 };
 const ICONES = [...new Set([...Object.values(ICONE_POI), "padrao"])];
 export const CAMADAS_POI = ["pwex-poi"];
+/** Classes/subclasses que não entram no mapa: paradas de ônibus/trem trazem o nome da rua e poluíam as cidades grandes. */
+export const POI_FORA = ["bus", "bus_stop", "bus_station", "railway", "platform", "stop_position", "tram_stop", "subway", "subway_entrance",
+  "halt", "station", "aerialway", "ferry_terminal", "taxi", "bicycle_rental", "parking", "parking_entrance", "bicycle_parking", "motorcycle_parking"];
 
 /** Cores dos rótulos: cidade (cor da marca), bairro (azul) e rua (neutra), no claro e no noturno. */
 function cores(escuro: boolean) {
@@ -48,7 +51,9 @@ function adicionarPoi(m: Mapa, escuro: boolean) {
   for (const [classe, icone] of Object.entries(ICONE_POI)) match.push(classe, `poi_${icone}`);
   match.push(["match", ["get", "class"], ...Object.entries(ICONE_POI).flatMap(([k, v]) => [k, `poi_${v}`]), "poi_padrao"]);
   m.addLayer({
-    id: "pwex-poi", type: "symbol", source: "openmaptiles", "source-layer": "poi", minzoom: 15, filter: ["has", "name"],
+    id: "pwex-poi", type: "symbol", source: "openmaptiles", "source-layer": "poi", minzoom: 15,
+    filter: ["all", ["has", "name"], ["!", ["in", ["get", "class"], ["literal", POI_FORA]]],
+      ["!", ["in", ["coalesce", ["get", "subclass"], ""], ["literal", POI_FORA]]]] as never,
     layout: {
       visibility: estabelecimentosVisiveis() ? "visible" : "none",
       "icon-image": match as never, "icon-size": 0.9, "icon-allow-overlap": false,

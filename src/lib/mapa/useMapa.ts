@@ -8,6 +8,7 @@ import { useModoTeste } from "@/features/teste/modoTeste";
 import { useConta } from "@/features/conta/conta";
 import { aoMudarEstabelecimentos, aoMudarRuas, estabelecimentosVisiveis, modoRuas } from "./estabelecimentos";
 import { CAMADAS_POI, aplicarEstiloPw, aplicarModoRuas } from "./estilo";
+import { registrarMapa } from "./registro";
 
 export const ESTILOS_MAPA = {
   claro: "https://tiles.openfreemap.org/styles/positron",
@@ -42,6 +43,7 @@ export function useMapa(container: RefObject<HTMLDivElement | null>) {
       setPronto(true);
     });
     mapa.current = m;
+    const desregistrar = registrarMapa(m);
     // botão "Mostrar/Ocultar estabelecimentos" (fica junto do "Mostrar lista")
     const desligar = aoMudarEstabelecimentos(() => {
       const v = estabelecimentosVisiveis() ? "visible" : "none";
@@ -49,6 +51,7 @@ export function useMapa(container: RefObject<HTMLDivElement | null>) {
     });
     const desligarRuas = aoMudarRuas(() => { try { aplicarModoRuas(m, modoRuas()); } catch {} });
     return () => {
+      desregistrar();
       desligarRuas();
       desligar();
       m.remove();

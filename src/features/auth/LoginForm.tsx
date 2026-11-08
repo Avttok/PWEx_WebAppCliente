@@ -1,13 +1,14 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent, type ReactNode } from "react";
 import { LogIn, X } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
 import { contas, definirPermanecer, permanecer as lerPermanecer, useContasSalvas, type ContaSalva } from "@/lib/supabase/contas";
 import { Logo } from "@/features/marca/Logo";
 import { BotaoTema } from "@/features/tema/BotaoTema";
 
-export function LoginForm() {
+/** `rodape`: conteúdo extra embaixo do formulário (ex.: "Criar conta" no site do cliente). */
+export function LoginForm({ rodape }: { rodape?: ReactNode } = {}) {
   const salvas = useContasSalvas();
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
@@ -96,6 +97,7 @@ export function LoginForm() {
         <button className="botao-ouro" disabled={carregando}>
           <LogIn size={18} aria-hidden /> {carregando ? "Entrando…" : "Entrar"}
         </button>
+        {rodape}
       </form>
     </main>
   );

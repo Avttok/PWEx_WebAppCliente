@@ -104,3 +104,22 @@ a.chip { text-decoration: none; }
 .dados-conta strong { font-size: 14.5px; overflow-wrap: anywhere; }
 .titulo-linha .rotulo { margin: 0; }
 @media (max-width: 640px) { .abas-cliente { grid-template-columns: repeat(2, 1fr); } }
+.caixa-cadastro { max-width: 460px; gap: 12px; }
+.armadilha { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
+.cadastro-ok { display: grid; place-items: center; color: var(--verde); margin: 0; }
+.link-cadastro { background: none; border: 0; color: var(--ouro); font-weight: 600; cursor: pointer; padding: 6px; }
+.faixa-como { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 14px; margin: 0 12px; border-radius: 12px;
+  background: color-mix(in srgb, #a78bfa 14%, transparent); border: 1px solid color-mix(in srgb, #a78bfa 45%, transparent); font-size: 13px; }
+.faixa-como select { max-width: 240px; }
+.selo-teste { color: #a78bfa; }
+
+/* modelos de pedido */
+.chip.modelo { display: inline-flex; align-items: center; gap: 2px; padding: 0; overflow: hidden; flex-shrink: 0; }
+.chip.modelo > button { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; color: inherit; padding: 7px 4px 7px 12px; font: inherit; cursor: pointer; }
+.chip.modelo > button.tirar { padding: 7px 9px 7px 4px; color: var(--texto-3); }
+.chip.modelo > button.tirar:hover { color: var(--vermelho); }
+.chip.modelo.ativo { border-color: var(--ouro); color: var(--ouro); }
+.linha-chips { display: flex; gap: 8px; }
+.tipos-pedido .tipo-pedido { flex-direction: row; align-items: center; justify-content: flex-start; gap: 9px; padding: 10px 13px; }
+.tipos-pedido .tipo-pedido strong { font-size: 14px; }
+.tipos-pedido .tipo-pedido.ativo svg { color: var(--ouro); }

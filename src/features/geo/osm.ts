@@ -1,13 +1,25 @@
 import type { Endereco, ProvedorGeo, Referencia, Rota } from "./provedor";
+import { poisDoMapa } from "@/lib/mapa/registro";
 
 const NOMINATIM = "https://nominatim.openstreetmap.org";
 const OSRM = "https://router.project-osrm.org";
-const OVERPASS = "https://overpass-api.de/api/interpreter";
+const OVERPASS = [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter",
+  "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+];
+/** Transporte não serve de referência (nomes de parada/rua). */
+const FORA = new Set(["bus", "bus_stop", "bus_station", "platform", "stop_position", "tram_stop", "subway", "subway_entrance", "taxi", "parking", "parking_entrance", "bicycle_parking", "motorcycle_parking", "bicycle_rental"]);
 
 const TIPOS: Record<string, string> = {
   fuel: "Posto", pharmacy: "Farmácia", supermarket: "Mercado", bank: "Banco", restaurant: "Restaurante", school: "Escola",
   hospital: "Hospital", church: "Igreja", place_of_worship: "Igreja", bakery: "Padaria", cafe: "Café", fast_food: "Lanchonete",
-  convenience: "Conveniência", park: "Praça/parque", bus_station: "Rodoviária", police: "Polícia", post_office: "Correios",
+  convenience: "Conveniência", park: "Praça/parque", police: "Polícia", post_office: "Correios",
+  grocery: "Mercado", clothes: "Loja", hairdresser: "Salão", beauty: "Salão", dentist: "Dentista", doctors: "Clínica", clinic: "Clínica",
+  bar: "Bar", pub: "Bar", ice_cream: "Sorveteria", hotel: "Hotel", lodging: "Hotel", hardware: "Ferragem", doityourself: "Material de construção",
+  car_repair: "Oficina", car: "Concessionária", butcher: "Açougue", optician: "Ótica", mall: "Shopping", department_store: "Loja",
+  kindergarten: "Escola", college: "Faculdade", university: "Faculdade", townhall: "Prefeitura", library: "Biblioteca", gym: "Academia",
+  fitness_centre: "Academia", veterinary: "Veterinário", pet: "Pet shop", atm: "Caixa eletrônico", post: "Correios", playground: "Praça/parque",
 };
 
 function metros(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
@@ -88,36 +100,49 @@ function encurtar(nome: string): string {
 
 export const provedorOsm: ProvedorGeo = {
   async pontosProximos(lat, lng, raioM = 250) {
-    const q = `[out:json][timeout:12];(nwr(around:${raioM},${lat},${lng})[name][~"^(amenity|shop|leisure|tourism)$"~"."];);out center 40;way(around:${Math.min(raioM, 180)},${lat},${lng})[highway][name];out geom 40;`;
-    try {
-      const r = await fetch(OVERPASS, { method: "POST", body: new URLSearchParams({ data: q }) });
-      if (!r.ok) return [];
-      const j = (await r.json()) as { elements: { type: string; id: number; lat?: number; lon?: number; center?: { lat: number; lon: number }; geometry?: { lat: number; lon: number }[]; tags: Record<string, string> }[] };
+    const q = `[out:json][timeout:10];(nwr(around:${raioM},${lat},${lng})[name][~"^(amenity|shop|leisure|tourism|office|healthcare|craft)$"~"."];);out center 60;way(around:${Math.min(raioM, 180)},${lat},${lng})[highway][name];out geom 40;`;
+    const xy = plano(lat, lng);
+    const destino = xy(lat, lng);
+    const montar = (itens: { nome: string; lat: number; lng: number; tipo: string }[], vias: Via[]) => {
       const vistos = new Set<string>();
-      const xy = plano(lat, lng);
-      const vias: Via[] = j.elements.filter((e) => e.type === "way" && e.tags?.highway && e.geometry?.length)
-        .map((e) => ({ id: e.id, nome: e.tags.name, pontos: e.geometry!.map((g) => xy(g.lat, g.lon)) }));
-      const destino = xy(lat, lng);
-      return j.elements
-        .filter((e) => !(e.type === "way" && e.tags?.highway))
-        .map<Referencia | null>((e) => {
-          const p = e.center ?? (e.lat != null && e.lon != null ? { lat: e.lat, lon: e.lon } : null);
-          if (!p || !e.tags.name) return null;
-          const t = e.tags.amenity ?? e.tags.shop ?? e.tags.leisure ?? e.tags.tourism ?? "";
+      return itens
+        .filter((x) => !FORA.has(x.tipo))
+        .map<Referencia>((x) => {
           let relacao: string | null = null;
           try {
-            const r = relacaoNaRua(destino, xy(p.lat, p.lon), vias);
-            relacao = r === "frente" ? `Fica do outro lado da rua de ${e.tags.name}`
-              : r ? `Fica à ${r} de ${e.tags.name} (olhando da rua)` : null;
+            const r = relacaoNaRua(destino, xy(x.lat, x.lng), vias);
+            relacao = r === "frente" ? `Fica do outro lado da rua de ${x.nome}` : r ? `Fica à ${r} de ${x.nome} (olhando da rua)` : null;
           } catch { relacao = null; }
-          return { nome: e.tags.name, lat: p.lat, lng: p.lon, tipo: TIPOS[t] ?? null, distancia_m: Math.round(metros({ lat, lng }, { lat: p.lat, lng: p.lon })), relacao };
+          return { nome: x.nome, lat: x.lat, lng: x.lng, tipo: TIPOS[x.tipo] ?? null, distancia_m: Math.round(metros({ lat, lng }, { lat: x.lat, lng: x.lng })), relacao };
         })
-        .filter((x): x is Referencia => x != null && !vistos.has(x.nome.toLowerCase()) && Boolean(vistos.add(x.nome.toLowerCase())))
+        .filter((x) => !vistos.has(x.nome.toLowerCase()) && Boolean(vistos.add(x.nome.toLowerCase())))
         .sort((a, b) => (a.distancia_m ?? 0) - (b.distancia_m ?? 0))
         .slice(0, 8);
-    } catch {
-      return [];
+    };
+    // 1) Overpass (vários espelhos: o principal vive lotado)
+    for (const url of OVERPASS) {
+      try {
+        const ctl = new AbortController();
+        const t = setTimeout(() => ctl.abort(), 9000);
+        const r = await fetch(url, { method: "POST", body: new URLSearchParams({ data: q }), signal: ctl.signal });
+        clearTimeout(t);
+        if (!r.ok) continue;
+        const j = (await r.json()) as { elements: { type: string; id: number; lat?: number; lon?: number; center?: { lat: number; lon: number }; geometry?: { lat: number; lon: number }[]; tags: Record<string, string> }[] };
+        const vias: Via[] = j.elements.filter((e) => e.type === "way" && e.tags?.highway && e.geometry?.length)
+          .map((e) => ({ id: e.id, nome: e.tags.name, pontos: e.geometry!.map((g) => xy(g.lat, g.lon)) }));
+        const itens = j.elements.filter((e) => !(e.type === "way" && e.tags?.highway) && e.tags?.name).flatMap((e) => {
+          const p = e.center ?? (e.lat != null && e.lon != null ? { lat: e.lat, lon: e.lon } : null);
+          return p ? [{ nome: e.tags.name, lat: p.lat, lng: p.lon, tipo: e.tags.amenity ?? e.tags.shop ?? e.tags.leisure ?? e.tags.tourism ?? e.tags.office ?? e.tags.healthcare ?? e.tags.craft ?? "" }] : [];
+        });
+        const lista = montar(itens, vias);
+        if (lista.length) return lista;
+        break; // respondeu e não há nada: tenta o mapa
+      } catch { /* espelho fora ou lento: próximo */ }
     }
+    // 2) Reserva: o que o próprio mapa já carregou
+    const { pois, vias } = poisDoMapa(lat, lng, raioM);
+    return montar(pois.map((p) => ({ nome: p.nome, lat: p.lat, lng: p.lng, tipo: p.classe })),
+      vias.map((v, i) => ({ id: i, nome: v.nome, pontos: v.pontos.map((g) => xy(g.lat, g.lng)) })));
   },
 
   async buscarEnderecos(texto) {

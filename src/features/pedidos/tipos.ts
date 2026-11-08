@@ -26,8 +26,12 @@ export interface Pedido {
   criado_em: string; concluido_em: string | null; cancelado_em: string | null;
   pedido_pontos?: PontoPedido[]; pedido_itens?: ItemPedido[];
 }
-export interface Categoria { id: string; nome: string; descricao: string | null; perigoso: boolean; classe_risco: string | null; fragil: boolean; ativa: boolean }
-export interface TipoPedido { chave: string; nome: string; descricao: string | null; ativo: boolean }
+export type Campo = "oculto" | "opcional" | "obrigatorio";
+export interface Categoria {
+  id: string; nome: string; descricao: string | null; perigoso: boolean; classe_risco: string | null; fragil: boolean; ativa?: boolean; icone?: string | null;
+  campo_descricao?: Campo; campo_peso?: Campo; campo_medidas?: Campo; campo_valor?: Campo; campo_quantidade?: Campo;
+}
+export interface TipoPedido { chave: string; nome: string; descricao: string | null; ativo?: boolean; icone?: string | null }
 
 export const ROTULO_PEDIDO: Record<StatusPedido, string> = {
   recebido: "Para revisar", aprovado: "Aprovado", roteirizado: "Em rota montada", em_rota: "Com motoboy", concluido: "Entregue", cancelado: "Cancelado", recusado: "Recusado",
@@ -61,6 +65,16 @@ const ERROS: Record<string, string> = {
   fatura_paga: "Fatura paga não pode ser cancelada.",
   feche_o_holerite_antes: "Feche o holerite antes de marcar como pago.",
   apenas_dev: "Só o Dev altera isso.",
+  item_sem_peso: "Informe o peso dos itens que pedem peso.",
+  item_sem_valor: "Informe o valor declarado dos itens que pedem valor.",
+  item_sem_descricao: "Descreva os itens que pedem descrição.",
+  item_sem_medidas: "Informe as medidas dos itens que pedem medidas.",
+  item_sem_categoria: "Escolha o tipo de cada item.",
+  categoria_invalida: "Tipo de item inválido.",
+  pedido_nao_pode_voltar: "Esse pedido não pode voltar para a revisão agora.",
+  cliente_nao_cancela: "Para cancelar, fale com a PW Express.",
+  cadastro_nao_encontrado: "Cadastro não encontrado.",
+  versao_nao_autorizada: "Versão do app não autorizada.",
 };
 export function traduzir(msg: string | undefined): string {
   if (!msg) return "Erro desconhecido.";
