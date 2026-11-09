@@ -179,6 +179,7 @@ function DetalhePedido({ pedido: p, conta, onVoltar, onMudou }: { pedido: Pedido
     onMudou();
   }
   const pinos: PinoParada[] = p.pontos.map((x, i) => ({ chave: x.id, lat: x.lat, lng: x.lng, tipo: x.tipo, rotulo: String(i + 1), concluida: x.status === "concluido" }));
+  const [foco, setFoco] = useState<{ lat: number; lng: number; vez: number } | null>(null);
   const podeCancelar = conta.pode_cancelar !== false && ["recebido", "aprovado", "roteirizado"].includes(p.status);
 
   return (
@@ -191,7 +192,7 @@ function DetalhePedido({ pedido: p, conta, onVoltar, onMudou }: { pedido: Pedido
         </div>
         <p className="dica" style={{ margin: 0 }}>{STATUS[p.status].dica}{p.recusa_motivo ? ` Motivo: ${p.recusa_motivo}` : ""}</p>
         <div className="cliente-mapa">
-          <MapaCorridas paradas={pinos} enquadrar={p.id}
+          <MapaCorridas paradas={pinos} enquadrar={p.id} foco={foco}
             motoboys={motoboys.map((m, i) => ({ id: `m${i}`, nome: m.nome, lat: m.lat, lng: m.lng, status: "em_corrida" }))} />
         </div>
         {p.cobranca === "pre_pago" && p.pagamento_status === "pendente" && !["cancelado", "recusado"].includes(p.status) && (
@@ -204,7 +205,7 @@ function DetalhePedido({ pedido: p, conta, onVoltar, onMudou }: { pedido: Pedido
         {p.codigos.length > 0 && <p className="cliente-codigo">Código de entrega: <strong>{p.codigos.join(" · ")}</strong> <span className="dica">passe só para quem vai receber</span></p>}
         <ol className="cliente-paradas">
           {p.pontos.map((x, i) => (
-            <li key={x.id} className={x.status === "concluido" ? "feita" : ""}>
+            <li key={x.id} className={`clicavel${x.status === "concluido" ? " feita" : ""}`} title="Ver no mapa" onClick={() => setFoco({ lat: x.lat, lng: x.lng, vez: Date.now() })}>
               <span className={`pino-mini ${x.tipo}`}>{i + 1}</span>
               <div><strong>{x.tipo === "coleta" ? "Coleta" : "Entrega"}</strong> · {x.endereco}
                 {x.contato_nome && <span className="dica"> · {x.contato_nome}</span>}

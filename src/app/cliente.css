@@ -123,3 +123,6 @@ a.chip { text-decoration: none; }
 .tipos-pedido .tipo-pedido { flex-direction: row; align-items: center; justify-content: flex-start; gap: 9px; padding: 10px 13px; }
 .tipos-pedido .tipo-pedido strong { font-size: 14px; }
 .tipos-pedido .tipo-pedido.ativo svg { color: var(--ouro); }
+
+.clicavel { cursor: pointer; border-radius: 10px; transition: background .15s; }
+.clicavel:hover { background: var(--vidro-sutil); }

@@ -34,6 +34,8 @@ interface Props {
   modoEscolha?: boolean;
   /** Quando muda, o mapa reenquadra tudo. */
   enquadrar?: string;
+  /** Clique num endereço da lista: centraliza e aproxima nele (mude "vez" para repetir). */
+  foco?: { lat: number; lng: number; vez: number } | null;
 }
 
 const VAZIO = { type: "FeatureCollection" as const, features: [] };
@@ -46,7 +48,7 @@ function linha(coords: [number, number][]) {
 }
 
 /** Mapa genérico das telas de corrida: paradas numeradas, rota planejada, trilha real e motoboys. */
-export function MapaCorridas({ paradas = [], rotaPlanejada, trilha = [], motoboys = [], aoClicar, modoEscolha, enquadrar }: Props) {
+export function MapaCorridas({ paradas = [], rotaPlanejada, trilha = [], motoboys = [], aoClicar, modoEscolha, enquadrar, foco }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const { mapa, pronto } = useMapa(container);
   const pinos = useRef<Record<string, maplibregl.Marker>>({});
@@ -164,6 +166,14 @@ export function MapaCorridas({ paradas = [], rotaPlanejada, trilha = [], motoboy
     if (!b.isEmpty()) m.fitBounds(b, { padding: 90, maxZoom: 15, duration: 600 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapa, pronto, enquadrar]);
+
+  // foco num ponto da lista
+  useEffect(() => {
+    const m = mapa.current;
+    if (!m || !pronto || !foco) return;
+    container.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    m.flyTo({ center: [foco.lng, foco.lat], zoom: Math.max(m.getZoom(), 15.5), duration: 700 });
+  }, [mapa, pronto, foco]);
 
   return <div ref={container} className="mapa" />;
 }
