@@ -126,3 +126,19 @@ a.chip { text-decoration: none; }
 
 .clicavel { cursor: pointer; border-radius: 10px; transition: background .15s; }
 .clicavel:hover { background: var(--vidro-sutil); }
+
+/* ---------------------------------------------------------------- tour guiado e dicas (?) */
+.tour { position: fixed; inset: 0; z-index: 1000; }
+.tour-fundo { position: absolute; inset: 0; }
+.tour-escuro { position: absolute; inset: 0; background: rgb(0 0 0 / .62); pointer-events: none; }
+.tour-recorte { position: fixed; border-radius: 14px; box-shadow: 0 0 0 9999px rgb(0 0 0 / .62), 0 0 0 2px var(--ouro); pointer-events: none; transition: all .25s ease; }
+.tour-balao { position: fixed; padding: 18px; border-radius: 18px; border: 1px solid var(--borda-forte); display: flex; flex-direction: column; gap: 6px; box-shadow: var(--sombra); }
+.tour-balao strong { font-size: 1.05rem; }
+.tour-balao p { margin: 0; color: var(--texto-2); line-height: 1.5; font-size: .95rem; }
+.tour-conta { color: var(--ouro); font-size: .78rem; font-weight: 700; }
+.tour-acoes { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+.dica-q { position: relative; display: inline-flex; vertical-align: middle; margin-left: 6px; }
+.dica-q-botao { width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--borda-forte); background: var(--vidro-sutil); color: var(--texto-2); font-size: .72rem; font-weight: 800; cursor: pointer; display: grid; place-items: center; padding: 0; line-height: 1; }
+.dica-q-botao:hover, .dica-q-botao[aria-expanded="true"] { border-color: var(--ouro); color: var(--ouro); }
+.dica-q-balao { position: absolute; z-index: 50; top: calc(100% + 8px); left: 50%; transform: translateX(-50%); width: min(300px, 80vw); padding: 12px 14px; border-radius: 14px; border: 1px solid var(--borda-forte); font-size: .86rem; line-height: 1.5; color: var(--texto-2); font-weight: 400; text-transform: none; letter-spacing: normal; white-space: normal; box-shadow: var(--sombra); display: flex; flex-direction: column; gap: 4px; }
+.dica-q-balao strong { color: var(--texto); font-size: .92rem; }

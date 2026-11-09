@@ -10,6 +10,8 @@ import { geo, type Referencia, type Rota } from "@/features/geo";
 import { CampoEndereco } from "@/features/corridas/CampoEndereco";
 import { CampoReferencias } from "@/features/corridas/CampoReferencias";
 import { MapaCorridas, type PinoParada } from "@/features/corridas/MapaCorridas";
+import { Dica, Tour, abrirTour, type PassoTour } from "@/features/ui/Tour";
+import { Compass, LifeBuoy } from "lucide-react";
 import { formatarDuracao, formatarKm } from "@/features/corridas/tipos";
 import { paraCampo, sugestaoHorario } from "@/features/corridas/planejadas";
 import { toast } from "@/features/ui/toast";
@@ -97,9 +99,10 @@ export function PainelCliente() {
         </div>
         <button className="botao-ouro" onClick={() => { setAba("novo"); setAberto(null); }}><PackagePlus size={17} aria-hidden /> Novo pedido</button>
       </div>
+      <Tour id="cliente" passos={TOUR_CLIENTE} />
       <div className="segmentado abas-cliente">
         {([["pedidos", "Pedidos", Package], ["novo", "Novo pedido", PackagePlus], ["faturas", conta.cobranca === "credito" ? "Faturas" : "Pagamentos", Receipt], ["conta", "Minha conta", Building2]] as [Aba, string, typeof Package][]).map(([k, r, I]) => (
-          <button key={k} type="button" className={aba === k ? "ativo" : ""} onClick={() => { setAba(k); setAberto(null); }}>
+          <button key={k} type="button" data-tour={`aba-${k}`} className={aba === k ? "ativo" : ""} onClick={() => { setAba(k); setAberto(null); }}>
             <I size={14} aria-hidden /> {r}{k === "faturas" && abertas.length > 0 && <span className="filtro-n">{abertas.length}</span>}
           </button>
         ))}
@@ -367,7 +370,7 @@ function NovoPedido({ conta, onCriado }: { conta: Conta; onCriado: (id: string) 
       <div className="cliente-coluna">
         {conta.pode_modelos !== false && (modelos.length > 0 || salvarComo != null) && (
           <div className="cliente-cartao vidro">
-            <span className="rotulo"><Bookmark size={13} aria-hidden /> Meus modelos</span>
+            <span className="rotulo"><Bookmark size={13} aria-hidden /> Meus modelos<Dica titulo="Modelos" texto="Um pedido que se repete, guardado. Toque nele para preencher tudo de novo; dá para mudar o que quiser antes de enviar." /></span>
             <div className="linha-chips modelos">
               {modelos.map((m) => (
                 <span key={m.id} className={`chip modelo ${modeloId === m.id ? "ativo" : ""}`}>
@@ -396,7 +399,7 @@ function NovoPedido({ conta, onCriado }: { conta: Conta; onCriado: (id: string) 
               ))}
             </div>
           )}
-          <label className="opcao"><span><Zap size={14} aria-hidden style={{ color: "var(--vermelho)" }} /> Urgente</span><input type="checkbox" role="switch" checked={urgente} onChange={(e) => setUrgente(e.target.checked)} /></label>
+          <label className="opcao"><span><Zap size={14} aria-hidden style={{ color: "var(--vermelho)" }} /> Urgente<Dica titulo="Urgente" texto="Passa na frente: a rota sai sozinha, não espera juntar com outros pedidos e chega até motoboys fora do raio deles. Pode custar mais, conforme o combinado com a PW Express." /></span><input type="checkbox" role="switch" checked={urgente} onChange={(e) => setUrgente(e.target.checked)} /></label>
         </div>
 
         <div className="cliente-cartao vidro">
@@ -553,6 +556,10 @@ function MinhaConta({ conta }: { conta: Conta }) {
         <p className="dica" style={{ margin: 0 }}>Para mudar algum dado, fale com a PW Express.</p>
       </div>
       {conta.troca_senha !== false && <TrocarSenha />}
+      <div className="bloco vidro linha-botoes">
+        <a className="botao-texto" href="/ajuda?p=cliente" target="_blank" rel="noopener"><LifeBuoy size={15} aria-hidden /> Central de ajuda</a>
+        <button type="button" className="botao-texto" onClick={() => abrirTour("cliente")}><Compass size={15} aria-hidden /> Ver o tour</button>
+      </div>
     </>
   );
 }
@@ -592,3 +599,12 @@ function TrocarSenha() {
     </div>
   );
 }
+
+/** Tour do site do cliente: abre na primeira vez; depois, em Minha conta → Ver o tour. */
+const TOUR_CLIENTE: PassoTour[] = [
+  { titulo: "Bem-vindo à PW Express", texto: "Um passeio rápido pelo seu painel. Dá para rever quando quiser, em Minha conta." },
+  { alvo: '[data-tour="aba-novo"]', titulo: "Novo pedido", texto: "Marque a coleta e as entregas, diga o que vai em cada uma e escolha agora ou agendado. O mapa mostra o caminho." },
+  { alvo: '[data-tour="aba-pedidos"]', titulo: "Pedidos", texto: "Todos os seus pedidos. Abra um para ver o mapa, a situação de cada entrega e quem recebeu." },
+  { alvo: '[data-tour="aba-faturas"]', titulo: "Faturas e pagamentos", texto: "No crédito, as faturas de cada ciclo. No pagamento antecipado, os pagamentos de cada pedido." },
+  { alvo: '[data-tour="aba-conta"]', titulo: "Minha conta", texto: "Seus dados, a troca de senha, a central de ajuda e este tour." },
+];
