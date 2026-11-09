@@ -10,6 +10,7 @@ import { geo, type Referencia, type Rota } from "@/features/geo";
 import { CampoEndereco } from "@/features/corridas/CampoEndereco";
 import { CampoReferencias } from "@/features/corridas/CampoReferencias";
 import { MapaCorridas, type PinoParada } from "@/features/corridas/MapaCorridas";
+import { trilhaDoPedido } from "@/lib/mapa/trilhaPedido";
 import { Dica, Tour, abrirTour, type PassoTour } from "@/features/ui/Tour";
 import { Compass, LifeBuoy } from "lucide-react";
 import { formatarDuracao, formatarKm } from "@/features/corridas/tipos";
@@ -161,13 +162,23 @@ function ListaPedidos({ pedidos, onAbrir, onNovo }: { pedidos: PedidoC[]; onAbri
 // ------------------------------------------------------------------ detalhe
 
 function DetalhePedido({ pedido: p, conta, onVoltar, onMudou }: { pedido: PedidoC; conta: Conta; onVoltar: () => void; onMudou: () => void }) {
-  const [motoboys, setMotoboys] = useState<{ lat: number; lng: number; nome: string }[]>([]);
+  const [motoboys, setMotoboys] = useState<{ lat: number; lng: number; nome: string; foto: string | null }[]>([]);
+  // feito: o caminho do motoboy com o seu pedido (da coleta em diante), pelas ruas
+  const [trilha, setTrilha] = useState<[number, number][]>([]);
+  useEffect(() => {
+    if (!conta.ve_ao_vivo || !["em_rota", "concluido"].includes(p.status)) { setTrilha([]); return; }
+    let vivo = true;
+    const buscar = () => trilhaDoPedido(p.id).then((t) => { if (vivo) setTrilha(t); });
+    void buscar();
+    const t = p.status === "em_rota" ? setInterval(buscar, 60_000) : undefined;
+    return () => { vivo = false; if (t) clearInterval(t); };
+  }, [p.id, p.status, conta.ve_ao_vivo]);
   useEffect(() => {
     if (!conta.ve_ao_vivo || p.status !== "em_rota") { setMotoboys([]); return; }
     let vivo = true;
     async function buscar() {
       const { data } = await supabase().rpc("acompanhar_pedido_cliente", { p_pedido: p.id });
-      if (vivo) setMotoboys(((data ?? []) as { lat: number | null; lng: number | null; nome: string }[]).filter((m) => m.lat != null).map((m) => ({ lat: m.lat!, lng: m.lng!, nome: m.nome })));
+      if (vivo) setMotoboys(((data ?? []) as { lat: number | null; lng: number | null; nome: string; foto?: string | null }[]).filter((m) => m.lat != null).map((m) => ({ lat: m.lat!, lng: m.lng!, nome: m.nome, foto: m.foto ?? null })));
     }
     void buscar();
     const t = setInterval(buscar, 10_000);
@@ -195,8 +206,9 @@ function DetalhePedido({ pedido: p, conta, onVoltar, onMudou }: { pedido: Pedido
         </div>
         <p className="dica" style={{ margin: 0 }}>{STATUS[p.status].dica}{p.recusa_motivo ? ` Motivo: ${p.recusa_motivo}` : ""}</p>
         <div className="cliente-mapa">
-          <MapaCorridas paradas={pinos} enquadrar={p.id} foco={foco}
-            motoboys={motoboys.map((m, i) => ({ id: `m${i}`, nome: m.nome, lat: m.lat, lng: m.lng, status: "em_corrida" }))} />
+          <MapaCorridas paradas={pinos} enquadrar={p.id} foco={foco} trilha={trilha}
+            restanteDe={motoboys[0] ? { lat: motoboys[0].lat, lng: motoboys[0].lng } : null}
+            motoboys={motoboys.map((m, i) => ({ id: `m${i}`, nome: m.nome, lat: m.lat, lng: m.lng, status: "em_corrida", foto: m.foto }))} />
         </div>
         {p.cobranca === "pre_pago" && p.pagamento_status === "pendente" && !["cancelado", "recusado"].includes(p.status) && (
           <div className="cliente-pagar">

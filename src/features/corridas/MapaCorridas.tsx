@@ -41,6 +41,10 @@ interface Props {
   rotas?: string[];
   /** false: não traça sozinho o caminho entre as paradas. */
   caminhoAuto?: boolean;
+  /** Posição do motoboy em corrida: o "a fazer" sai dele e passa pelas paradas que faltam. */
+  restanteDe?: { lat: number; lng: number } | null;
+  /** Legenda "Feito / A fazer" no canto (padrão: aparece quando há os dois tipos de linha). */
+  legenda?: boolean;
 }
 
 const VAZIO = { type: "FeatureCollection" as const, features: [] };
@@ -54,7 +58,7 @@ function linha(coords: [number, number][]) {
 }
 
 /** Mapa genérico das telas de corrida: paradas numeradas, rota planejada, trilha real e motoboys. */
-export function MapaCorridas({ paradas = [], rotaPlanejada, trilha = [], motoboys = [], aoClicar, modoEscolha, enquadrar, foco, rotas = [], caminhoAuto = true }: Props) {
+export function MapaCorridas({ paradas = [], rotaPlanejada, trilha = [], motoboys = [], aoClicar, modoEscolha, enquadrar, foco, rotas = [], caminhoAuto = true, restanteDe, legenda = true }: Props) {
   // sem rota pronta: traça o caminho pelas ruas entre as paradas, na ordem
   const chaveParadas = paradas.map((p) => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join(";");
   const [caminho, setCaminho] = useState<string | null>(null);
@@ -71,6 +75,27 @@ export function MapaCorridas({ paradas = [], rotaPlanejada, trilha = [], motoboy
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rotaPlanejada, chaveParadas]);
   const rotaDesenhada = rotaPlanejada || caminho;
+
+  // "a fazer" de verdade: do motoboy até as paradas que faltam (recalcula ao andar ~80 m ou concluir uma parada)
+  const pendentes = paradas.filter((p) => !p.concluida);
+  const todasFeitas = paradas.length > 0 && pendentes.length === 0;
+  const chavePend = pendentes.map((p) => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join(";");
+  const [restante, setRestante] = useState<string | null>(null);
+  const origemRest = useRef<{ lat: number; lng: number; chave: string } | null>(null);
+  useEffect(() => {
+    if (!restanteDe || !pendentes.length) { setRestante(null); origemRest.current = null; return; }
+    const o = origemRest.current;
+    const perto = o && o.chave === chavePend && Math.hypot((o.lat - restanteDe.lat) * 111_000, (o.lng - restanteDe.lng) * 111_000 * Math.cos((o.lat * Math.PI) / 180)) < 80;
+    if (perto) return;
+    origemRest.current = { ...restanteDe, chave: chavePend };
+    let vivo = true;
+    geo.calcularRota([restanteDe, ...pendentes.slice(0, 24).map((p) => ({ lat: p.lat, lng: p.lng }))]).then((r) => { if (vivo && r) setRestante(r.polyline); }).catch(() => {});
+    return () => { vivo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restanteDe?.lat, restanteDe?.lng, chavePend]);
+  // o que mostrar como "a fazer" e o que fica só de fundo (a rota inteira planejada)
+  const aFazer = todasFeitas ? [] : restante ? [restante] : [...(rotaDesenhada ? [rotaDesenhada] : []), ...rotas];
+  const fundo = todasFeitas || restante ? [...(rotaDesenhada ? [rotaDesenhada] : []), ...rotas] : [];
   const container = useRef<HTMLDivElement>(null);
   const { mapa, pronto } = useMapa(container);
   const pinos = useRef<Record<string, maplibregl.Marker>>({});
@@ -83,11 +108,24 @@ export function MapaCorridas({ paradas = [], rotaPlanejada, trilha = [], motoboy
     if (!m || !pronto) return;
     pinos.current = {}; // mapa (re)criado: pinos antigos pertenciam ao mapa anterior
     m.addSource("rota", { type: "geojson", data: VAZIO });
+    m.addSource("plano", { type: "geojson", data: VAZIO });
     m.addSource("trilha", { type: "geojson", data: VAZIO });
+    // rota planejada inteira, só de fundo (quando já há o "a fazer" a partir do motoboy, ou tudo foi feito)
+    m.addLayer({
+      id: "plano", type: "line", source: "plano",
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: { "line-color": corOuro(), "line-width": 3, "line-dasharray": [1.5, 2], "line-opacity": 0.35 },
+    });
+    // a fazer: tracejado claro com contorno escuro (aparece no mapa claro e no escuro)
+    m.addLayer({
+      id: "rota-contorno", type: "line", source: "rota",
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: { "line-color": "#0a0a0a", "line-width": 7, "line-opacity": 0.55 },
+    });
     m.addLayer({
       id: "rota", type: "line", source: "rota",
-      layout: { "line-cap": "round", "line-join": "round" },
-      paint: { "line-color": "#0a0a0a", "line-width": 3, "line-dasharray": [2, 1.5], "line-opacity": 0.6 },
+      layout: { "line-cap": "butt", "line-join": "round" },
+      paint: { "line-color": "#f5f5f4", "line-width": 3.5, "line-dasharray": [2, 1.6] },
     });
     m.addLayer({
       id: "trilha-contorno", type: "line", source: "trilha",
@@ -113,10 +151,11 @@ export function MapaCorridas({ paradas = [], rotaPlanejada, trilha = [], motoboy
 
   useEffect(() => {
     if (!pronto) return;
-    const fonte = mapa.current?.getSource("rota") as maplibregl.GeoJSONSource | undefined;
-    const todas = [...(rotaDesenhada ? [rotaDesenhada] : []), ...rotas].map((r) => decodificarPolyline(r)).filter((c) => c.length >= 2);
-    fonte?.setData({ type: "FeatureCollection", features: todas.map((c) => ({ type: "Feature" as const, properties: {}, geometry: { type: "LineString" as const, coordinates: c } })) });
-  }, [mapa, pronto, rotaDesenhada, rotas.join("|")]); // eslint-disable-line react-hooks/exhaustive-deps
+    const feicoes = (lista: string[]) => ({ type: "FeatureCollection" as const, features: lista.map((r) => decodificarPolyline(r)).filter((c) => c.length >= 2)
+      .map((c) => ({ type: "Feature" as const, properties: {}, geometry: { type: "LineString" as const, coordinates: c } })) });
+    (mapa.current?.getSource("rota") as maplibregl.GeoJSONSource | undefined)?.setData(feicoes(aFazer));
+    (mapa.current?.getSource("plano") as maplibregl.GeoJSONSource | undefined)?.setData(feicoes(fundo));
+  }, [mapa, pronto, aFazer.join("|"), fundo.join("|")]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!pronto) return;
@@ -166,6 +205,7 @@ export function MapaCorridas({ paradas = [], rotaPlanejada, trilha = [], motoboy
       el.textContent = mb.foto ? "" : mb.nome.trim().charAt(0).toUpperCase();
       el.style.backgroundImage = mb.foto ? `url("${mb.foto}")` : "";
       el.classList.toggle("com-foto", Boolean(mb.foto));
+      el.style.zIndex = mb.status === "offline" ? "1" : mb.status === "disponivel" || mb.status === "em_corrida" ? "4" : "2";
       el.title = mb.nome;
       pino.setLngLat([mb.lng, mb.lat]);
     }
@@ -198,5 +238,15 @@ export function MapaCorridas({ paradas = [], rotaPlanejada, trilha = [], motoboy
     m.flyTo({ center: [foco.lng, foco.lat], zoom: Math.max(m.getZoom(), 15.5), duration: 700 });
   }, [mapa, pronto, foco]);
 
-  return <div ref={container} className="mapa" />;
+  const comFeito = trilha.length >= 2, comAFazer = aFazer.length > 0;
+  return (
+    <div ref={container} className="mapa">
+      {legenda && comFeito && (
+        <div className="mapa-legenda" aria-label="Legenda do mapa">
+          <span><i className="feito" /> Feito</span>
+          {comAFazer && <span><i className="afazer" /> A fazer</span>}
+        </div>
+      )}
+    </div>
+  );
 }
