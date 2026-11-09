@@ -139,7 +139,7 @@ function ListaPedidos({ pedidos, onAbrir, onNovo }: { pedidos: PedidoC[]; onAbri
         <div className="cliente-pedido-topo">
           <strong>#{p.numero}</strong><Selo s={p.status} />
           {p.tipo === "planejado" ? <CalendarClock size={13} aria-label="Agendado" /> : <Zap size={13} aria-label="Express" />}
-          <span className="espaco" /><strong>{p.valor == null && (p as { preco_oculto?: boolean }).preco_oculto ? "Em revisão" : moedaBr(p.valor)}</strong>
+          <span className="espaco" /><strong>{p.valor == null && (p as { preco_oculto?: boolean }).preco_oculto ? "Revisando" : moedaBr(p.valor)}</strong>
         </div>
         <span className="dica">{p.pontos.find((x) => x.tipo === "coleta")?.endereco} → {ent.length > 1 ? `${ent.length} entregas` : ent[0]?.endereco}</span>
         <span className="dica">{p.tipo === "planejado" ? `Agendado para ${quando(p.quando)}` : `Pedido ${quando(p.criado_em)}`}{ent.length > 1 && p.status === "em_rota" ? ` · ${feitas}/${ent.length} entregues` : ""}</span>
@@ -188,7 +188,7 @@ function DetalhePedido({ pedido: p, conta, onVoltar, onMudou }: { pedido: Pedido
       <div className="cliente-cartao vidro">
         <div className="cliente-pedido-topo">
           <h2 className="display" style={{ margin: 0 }}>Pedido #{p.numero}</h2><Selo s={p.status} /><span className="espaco" />
-          <strong className="figura" style={{ fontSize: 24 }}>{p.valor == null && (p as { preco_oculto?: boolean }).preco_oculto ? "Valor após a revisão" : moedaBr(p.valor)}</strong>
+          <strong className="figura" style={{ fontSize: 24 }}>{p.valor == null && (p as { preco_oculto?: boolean }).preco_oculto ? "Revisando" : moedaBr(p.valor)}</strong>
         </div>
         <p className="dica" style={{ margin: 0 }}>{STATUS[p.status].dica}{p.recusa_motivo ? ` Motivo: ${p.recusa_motivo}` : ""}</p>
         <div className="cliente-mapa">
@@ -451,11 +451,9 @@ function NovoPedido({ conta, onCriado }: { conta: Conta; onCriado: (id: string) 
           <div className="resumo-rota">
             <div><span className="rotulo">Distância</span><strong>{formatarKm(rota?.distanciaM ?? orc?.distancia_m)}</strong></div>
             <div><span className="rotulo">Tempo</span><strong>{formatarDuracao(rota?.duracaoS)}</strong></div>
-            {!(orc as { oculto?: boolean } | null)?.oculto && <div><span className="rotulo">Valor</span><strong className="texto-grad">{orc ? moedaBr(orc.total) : "—"}</strong></div>}
+            <div><span className="rotulo">Valor</span><strong className="texto-grad">{(orc as { oculto?: boolean } | null)?.oculto ? "Revisando" : orc ? moedaBr(orc.total) : "—"}</strong></div>
           </div>
-          {(orc as { oculto?: boolean } | null)?.oculto
-            ? <p className="dica" style={{ margin: 0 }}>O valor aparece aqui no pedido assim que a PW Express revisar.</p>
-            : !orc && <p className="dica" style={{ margin: 0 }}>Localize os endereços para ver o valor.</p>}
+          {!orc && <p className="dica" style={{ margin: 0 }}>Localize os endereços para ver o valor.</p>}
           {conta.cobranca === "pre_pago" ? (
             <div className="segmentado" style={{ gridTemplateColumns: `repeat(${Math.max(1, conta.metodos.length)}, 1fr)` }}>
               {conta.metodos.map((m) => (

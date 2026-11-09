@@ -25,6 +25,8 @@ type Estado = { fase: "carregando" } | { fase: "anonimo" } | { fase: "logado"; a
 export function AreaCliente({ children }: { children: ReactNode }) {
   const [estado, setEstado] = useState<Estado>({ fase: "carregando" });
   const [cadastrando, setCadastrando] = useState(false);
+  // /entrar?criar=1 abre direto o cadastro da empresa
+  useEffect(() => { if (new URLSearchParams(window.location.search).get("criar") === "1") setCadastrando(true); }, []);
   const [modoCadastro, setModoCadastro] = useState<string>("desligado");
   const [versao, setVersao] = useState(0); // recria o painel ao trocar de cliente
 

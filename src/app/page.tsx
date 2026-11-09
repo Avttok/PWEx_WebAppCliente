@@ -1,10 +1,5 @@
-import { AreaCliente } from "@/features/cliente/AreaCliente";
-import { PainelCliente } from "@/features/cliente/PainelCliente";
+import { Raiz } from "@/features/site/Raiz";
 
 export default function Inicio() {
-  return (
-    <AreaCliente>
-      <PainelCliente />
-    </AreaCliente>
-  );
+  return <Raiz />;
 }

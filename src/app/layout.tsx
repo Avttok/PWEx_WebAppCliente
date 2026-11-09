@@ -3,6 +3,7 @@ import "@fontsource-variable/archivo/wdth.css";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./globals.css";
 import "./cliente.css";
+import "./site.css";
 import { ProvedorTema, scriptTema } from "@/features/tema/tema";
 import { RolagemLateral } from "@/features/ui/RolagemLateral";
 
