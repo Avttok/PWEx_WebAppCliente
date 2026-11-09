@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { maplibregl } from "@/lib/mapa/maplibre";
 import { useMapa } from "@/lib/mapa/useMapa";
 import { corOuro } from "@/lib/mapa/cores";
 import { decodificarPolyline } from "@/lib/geo/polyline";
+import { geo } from "@/features/geo";
 import { COR_STATUS, type StatusMotoboy } from "@/features/rastreamento/tipos";
 
 export interface PinoParada {
@@ -36,9 +37,14 @@ interface Props {
   enquadrar?: string;
   /** Clique num endereço da lista: centraliza e aproxima nele (mude "vez" para repetir). */
   foco?: { lat: number; lng: number; vez: number } | null;
+  /** Vários caminhos (polylines) de uma vez: as rotas ativas. */
+  rotas?: string[];
+  /** false: não traça sozinho o caminho entre as paradas. */
+  caminhoAuto?: boolean;
 }
 
 const VAZIO = { type: "FeatureCollection" as const, features: [] };
+const CACHE_CAMINHO = new Map<string, string>();
 
 function linha(coords: [number, number][]) {
   return {
@@ -48,7 +54,23 @@ function linha(coords: [number, number][]) {
 }
 
 /** Mapa genérico das telas de corrida: paradas numeradas, rota planejada, trilha real e motoboys. */
-export function MapaCorridas({ paradas = [], rotaPlanejada, trilha = [], motoboys = [], aoClicar, modoEscolha, enquadrar, foco }: Props) {
+export function MapaCorridas({ paradas = [], rotaPlanejada, trilha = [], motoboys = [], aoClicar, modoEscolha, enquadrar, foco, rotas = [], caminhoAuto = true }: Props) {
+  // sem rota pronta: traça o caminho pelas ruas entre as paradas, na ordem
+  const chaveParadas = paradas.map((p) => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join(";");
+  const [caminho, setCaminho] = useState<string | null>(null);
+  useEffect(() => {
+    if (rotaPlanejada || paradas.length < 2 || !caminhoAuto) { setCaminho(null); return; }
+    let vivo = true;
+    const guardado = CACHE_CAMINHO.get(chaveParadas);
+    if (guardado) { setCaminho(guardado); return; }
+    geo.calcularRota(paradas.slice(0, 25).map((p) => ({ lat: p.lat, lng: p.lng }))).then((r) => {
+      if (!vivo || !r) return;
+      CACHE_CAMINHO.set(chaveParadas, r.polyline); setCaminho(r.polyline);
+    }).catch(() => {});
+    return () => { vivo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rotaPlanejada, chaveParadas]);
+  const rotaDesenhada = rotaPlanejada || caminho;
   const container = useRef<HTMLDivElement>(null);
   const { mapa, pronto } = useMapa(container);
   const pinos = useRef<Record<string, maplibregl.Marker>>({});
@@ -92,8 +114,9 @@ export function MapaCorridas({ paradas = [], rotaPlanejada, trilha = [], motoboy
   useEffect(() => {
     if (!pronto) return;
     const fonte = mapa.current?.getSource("rota") as maplibregl.GeoJSONSource | undefined;
-    fonte?.setData(linha(rotaPlanejada ? decodificarPolyline(rotaPlanejada) : []));
-  }, [mapa, pronto, rotaPlanejada]);
+    const todas = [...(rotaDesenhada ? [rotaDesenhada] : []), ...rotas].map((r) => decodificarPolyline(r)).filter((c) => c.length >= 2);
+    fonte?.setData({ type: "FeatureCollection", features: todas.map((c) => ({ type: "Feature" as const, properties: {}, geometry: { type: "LineString" as const, coordinates: c } })) });
+  }, [mapa, pronto, rotaDesenhada, rotas.join("|")]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!pronto) return;
