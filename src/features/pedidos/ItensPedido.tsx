@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Trash2, TriangleAlert } from "lucide-react";
+import { BookmarkPlus, PackageCheck, Plus, Trash2, TriangleAlert, X } from "lucide-react";
 import { Icone } from "@/features/ui/icones";
 import type { Campo, Categoria } from "./tipos";
 
@@ -8,7 +8,20 @@ import type { Campo, Categoria } from "./tipos";
 export interface ItemForm {
   chave: string; categoria_id: string; descricao: string; quantidade: string; peso_kg: string;
   comprimento_cm: string; largura_cm: string; altura_cm: string; valor_declarado: string; coleta: string; entrega: string;
+  /** Veio de um objeto salvo (para contar quantas vezes ele é usado). */
+  objeto_id?: string;
 }
+
+/** Objeto salvo pelo cliente: um produto que ele manda sempre. */
+export interface ObjetoSalvo {
+  id: string; nome: string; usos?: number;
+  dados: Partial<Omit<ItemForm, "chave" | "coleta" | "entrega" | "objeto_id">>;
+}
+/** O que guardar de um item como objeto (sem os pontos do pedido). */
+export const dadosDoObjeto = (x: ItemForm): ObjetoSalvo["dados"] => ({
+  categoria_id: x.categoria_id, descricao: x.descricao, quantidade: x.quantidade, peso_kg: x.peso_kg,
+  comprimento_cm: x.comprimento_cm, largura_cm: x.largura_cm, altura_cm: x.altura_cm, valor_declarado: x.valor_declarado,
+});
 let seq = 0;
 export const novoItem = (categoria_id = ""): ItemForm => ({ chave: `it${++seq}`, categoria_id, descricao: "", quantidade: "1", peso_kg: "", comprimento_cm: "", largura_cm: "", altura_cm: "", valor_declarado: "", coleta: "", entrega: "" });
 const num = (s: string) => (s.trim() === "" ? null : Number(s.replace(",", ".")));
@@ -49,19 +62,41 @@ export function faltandoItens(itens: ItemForm[], categorias: Categoria[]): strin
  * Itens do pedido: o cliente toca no tipo (botões com ícone) e só aparecem os campos que aquele tipo pede.
  * Ex.: documento não pede peso nem valor; peça automotiva pede valor declarado.
  */
-export function ItensPedido({ itens, onMudar, categorias, pontos, semCategoria = true }: {
+export function ItensPedido({ itens, onMudar, categorias, pontos, semCategoria = true, objetos, onSalvarObjeto, onApagarObjeto }: {
   itens: ItemForm[];
   onMudar: (l: ItemForm[]) => void;
   categorias: Categoria[];
   pontos: { chave: string; tipo: "coleta" | "entrega"; endereco: string }[];
   /** Mostra o botão "Outro" (item sem categoria). */
   semCategoria?: boolean;
+  /** Objetos salvos (undefined = sem objetos salvos para esta conta). */
+  objetos?: ObjetoSalvo[];
+  onSalvarObjeto?: (item: ItemForm) => void;
+  onApagarObjeto?: (o: ObjetoSalvo) => void;
 }) {
   const mudar = (k: string, d: Partial<ItemForm>) => onMudar(itens.map((x) => (x.chave === k ? { ...x, ...d } : x)));
   const coletas = pontos.filter((p) => p.tipo === "coleta"), entregas = pontos.filter((p) => p.tipo === "entrega");
   const rot = (s: string, c: Campo) => (c === "obrigatorio" ? `${s} *` : s);
   return (
     <div className="itens-pedido">
+      {objetos && objetos.length > 0 && (
+        <div className="itens-objetos" role="group" aria-label="Meus objetos">
+          <span className="rotulo"><PackageCheck size={12} aria-hidden /> Meus objetos</span>
+          <div className="linha-chips">
+            {objetos.map((o) => {
+              const k = categorias.find((c) => c.id === o.dados.categoria_id);
+              return (
+                <span key={o.id} className="chip modelo">
+                  <button type="button" title="Colocar no pedido" onClick={() => onMudar([...itens, { ...novoItem(o.dados.categoria_id ?? ""), ...o.dados, objeto_id: o.id }])}>
+                    <Icone nome={k?.icone ?? "box"} size={13} /> {o.nome}
+                  </button>
+                  {onApagarObjeto && <button type="button" className="tirar" aria-label={`Apagar o objeto ${o.nome}`} onClick={() => onApagarObjeto(o)}><X size={12} /></button>}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
       <div className="itens-tipos" role="group" aria-label="Adicionar item">
         {categorias.map((k) => (
           <button key={k.id} type="button" className={`item-tipo ${k.perigoso ? "perigoso" : ""}`} onClick={() => onMudar([...itens, novoItem(k.id)])} title={k.descricao ?? k.nome}>
@@ -90,6 +125,7 @@ export function ItensPedido({ itens, onMudar, categorias, pontos, semCategoria =
                   <button type="button" onClick={() => mudar(x.chave, { quantidade: String((num(x.quantidade) ?? 0) + 1) })} aria-label="Mais">+</button>
                 </span>
               )}
+              {onSalvarObjeto && <button type="button" className="icone" title="Salvar como objeto (para usar de novo)" aria-label="Salvar como objeto" onClick={() => onSalvarObjeto(x)}><BookmarkPlus size={14} /></button>}
               <button type="button" className="icone" aria-label="Remover item" onClick={() => onMudar(itens.filter((y) => y.chave !== x.chave))}><Trash2 size={14} /></button>
             </div>
             {c.descricao !== "oculto" && (

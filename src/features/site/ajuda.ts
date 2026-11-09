@@ -52,6 +52,23 @@ export const AJUDA: Partial<Record<Publico, Secao[]>> = {
         { id: "modelos", titulo: "Modelos de pedido", texto: [
           "Pedido que se repete? Depois de preencher, toque em Salvar como modelo.",
           "Nas próximas vezes, toque no modelo em Meus modelos: tudo é preenchido e você pode mudar o que quiser antes de enviar.",
+          "O modelo lembra se o pedido é para agora ou agendado. Se for agendado, guarda a hora e escolhe sozinho o próximo dia possível.",
+        ] },
+        { id: "objetos", titulo: "Meus objetos", texto: [
+          "Manda sempre o mesmo produto? No item do pedido, toque no ícone de salvar e dê um nome (ex.: Caixa de remédios).",
+          "O objeto guarda o tipo, a descrição, a quantidade, o peso, as medidas e o valor declarado. Nos próximos pedidos ele aparece em Meus objetos: um toque e o item entra no pedido.",
+          "Para apagar um objeto, toque no X ao lado do nome.",
+        ] },
+        { id: "confirmacoes", titulo: "Confirmações em cada coleta e entrega", texto: [
+          "Em cada endereço você escolhe como o motoboy confirma que passou por lá: foto, nome de quem entregou ou recebeu, assinatura na tela ou um código de 4 dígitos.",
+          "O código aparece no seu pedido. Passe só para quem vai entregar ou receber naquele endereço.",
+          "As opções que aparecem fixas já são pedidas pela PW Express em toda entrega. Se alguma opção não aparece, ela não está liberada na sua conta.",
+        ] },
+        { id: "horario-ponto", titulo: "Horário de cada endereço", texto: [
+          "Se um endereço só atende em certo horário, informe em Atende das … às …. O motoboy e a PW Express veem esse horário na rota.",
+        ] },
+        { id: "ida-e-volta", titulo: "Ida e volta", texto: [
+          "Precisa que o motoboy volte ao início, por exemplo para devolver um canhoto assinado ou uma maquininha? Toque em Ida e volta: uma entrega no primeiro endereço entra no fim do pedido.",
         ] },
         { id: "valor", titulo: "Como o valor é calculado", texto: [
           "O valor segue as regras combinadas com a PW Express: distância, pontos de entrega, volumes, peso, horário e urgência, entre outras.",

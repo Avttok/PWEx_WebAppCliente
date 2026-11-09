@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft, Bookmark, BookmarkPlus, Boxes, Building2, CalendarClock, CheckCircle2, Clock, CreditCard, FileText, FlaskConical, KeyRound, Lock, MapPinned, Package,
-  PackagePlus, Plus, QrCode, Receipt, Truck, UserRound, Wallet, X, Zap,
+  PackagePlus, Plus, QrCode, Receipt, Truck, Undo2, UserRound, Wallet, X, Zap,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
 import { geo, type Referencia, type Rota } from "@/features/geo";
@@ -17,7 +17,8 @@ import { formatarDuracao, formatarKm } from "@/features/corridas/tipos";
 import { paraCampo, sugestaoHorario } from "@/features/corridas/planejadas";
 import { toast } from "@/features/ui/toast";
 import { moedaBr, quando, traduzir, type Categoria, type Orcamento } from "@/features/pedidos/tipos";
-import { ItensPedido, faltandoItens, itensParaEnvio, novoItem, type ItemForm } from "@/features/pedidos/ItensPedido";
+import { ItensPedido, dadosDoObjeto, faltandoItens, itensParaEnvio, novoItem, type ItemForm, type ObjetoSalvo } from "@/features/pedidos/ItensPedido";
+import { OpcoesPonto, SelosPonto, type Confirmacao, type OpcoesDoPonto } from "@/features/pedidos/OpcoesPonto";
 import { ListaOrdenavel } from "@/features/ui/ListaOrdenavel";
 import { Icone } from "@/features/ui/icones";
 
@@ -31,10 +32,15 @@ interface Conta {
   categorias: Categoria[];
   em_aberto: number; icone?: string | null; teste?: boolean;
   pode_modelos?: boolean; pode_cancelar?: boolean; troca_senha?: boolean; categoria_obrigatoria?: boolean;
+  /** Peças do lego do pedido sob medida (o gestor liga/desliga no geral e por cliente). */
+  confirmacoes?: Partial<Record<Confirmacao, boolean>>; padrao_confirmacoes?: Partial<Record<Confirmacao, boolean>>;
+  pode_janela?: boolean; pode_objetos?: boolean; modelo_horario?: boolean;
 }
 interface Modelo { id: string; nome: string; icone: string | null; dados: DadosModelo; usos: number; usado_em: string | null }
 interface DadosModelo {
   tipo_pedido?: string; urgente?: boolean; observacoes?: string;
+  /** Agora ou agendado; agendado guarda a hora (HH:MM) e o próximo dia possível é usado ao carregar. */
+  agendar?: boolean; hora?: string; metodo?: string;
   pontos?: Omit<Ponto, "chave">[]; itens?: Omit<ItemForm, "chave">[];
 }
 type StatusP = "recebido" | "aprovado" | "roteirizado" | "em_rota" | "concluido" | "cancelado" | "recusado";
@@ -42,7 +48,7 @@ interface PedidoC {
   id: string; numero: number; tipo: "express" | "planejado"; tipo_pedido: string; quando: string | null; urgente: boolean; status: StatusP; valor: number | null;
   orcamento: Orcamento | null; cobranca: "credito" | "pre_pago"; pagamento_status: string; pagamento_metodo: string | null; fatura_id: string | null;
   observacoes: string | null; recusa_motivo: string | null; criado_em: string; concluido_em: string | null; cancelado_em: string | null;
-  pontos: { id: string; tipo: "coleta" | "entrega"; endereco: string; lat: number; lng: number; contato_nome: string | null; status: string; concluido_em: string | null; recebedor_nome: string | null }[];
+  pontos: ({ id: string; tipo: "coleta" | "entrega"; endereco: string; lat: number; lng: number; contato_nome: string | null; status: string; concluido_em: string | null; recebedor_nome: string | null; codigo?: string | null } & OpcoesDoPonto)[];
   itens: { descricao: string; quantidade: number; peso_kg: number | null; categoria: string | null; categoria_id?: string | null; icone?: string | null; perigoso: boolean }[];
   motoboys: string[]; codigos: string[];
 }
@@ -225,6 +231,7 @@ function DetalhePedido({ pedido: p, conta, onVoltar, onMudou }: { pedido: Pedido
               <div><strong>{x.tipo === "coleta" ? "Coleta" : "Entrega"}</strong> · {x.endereco}
                 {x.contato_nome && <span className="dica"> · {x.contato_nome}</span>}
                 {x.concluido_em && <div className="dica"><CheckCircle2 size={12} aria-hidden /> {quando(x.concluido_em)}{x.recebedor_nome ? ` · recebido por ${x.recebedor_nome}` : ""}</div>}
+                <SelosPonto p={x} />
               </div>
             </li>
           ))}
@@ -259,7 +266,7 @@ function Orcamento({ orc }: { orc: Orcamento }) {
 
 // ------------------------------------------------------------------ novo pedido
 
-interface Ponto { chave: string; tipo: "coleta" | "entrega"; endereco: string; lat: number | null; lng: number | null; contato_nome: string; contato_telefone: string; instrucoes: string; referencias: Referencia[] }
+interface Ponto extends OpcoesDoPonto { chave: string; tipo: "coleta" | "entrega"; endereco: string; lat: number | null; lng: number | null; contato_nome: string; contato_telefone: string; instrucoes: string; referencias: Referencia[] }
 let seq = 0;
 const ponto = (tipo: Ponto["tipo"], base: Partial<Ponto> = {}): Ponto => ({ chave: `p${++seq}`, tipo, endereco: "", lat: null, lng: null, contato_nome: "", contato_telefone: "", instrucoes: "", referencias: [], ...base });
 
@@ -273,6 +280,26 @@ function useModelos(conta: Conta) {
   }, [conta.id, conta.pode_modelos]);
   useEffect(() => { void recarregar(); }, [recarregar]);
   return { modelos, recarregar };
+}
+
+/** Objetos salvos (produtos que o cliente manda sempre). */
+function useObjetos(conta: Conta) {
+  const [objetos, setObjetos] = useState<ObjetoSalvo[]>([]);
+  const recarregar = useCallback(async () => {
+    if (conta.pode_objetos === false) return setObjetos([]);
+    const { data } = await supabase().from("cliente_objetos").select("id,nome,dados,usos").eq("empresa_id", conta.id).order("usos", { ascending: false }).order("nome");
+    setObjetos((data ?? []) as ObjetoSalvo[]);
+  }, [conta.id, conta.pode_objetos]);
+  useEffect(() => { void recarregar(); }, [recarregar]);
+  return { objetos, recarregar };
+}
+
+/** Próximo horário com esta hora (HH:MM) que respeita a antecedência mínima. */
+function proximoComHora(hora: string, antecedenciaMin: number): string {
+  const [h, m] = hora.split(":").map(Number);
+  const d = new Date(); d.setSeconds(0, 0); d.setHours(h || 0, m || 0);
+  while (d.getTime() < Date.now() + antecedenciaMin * 60_000) d.setDate(d.getDate() + 1);
+  return paraCampo(d);
 }
 
 function NovoPedido({ conta, onCriado }: { conta: Conta; onCriado: (id: string) => void }) {
@@ -293,6 +320,9 @@ function NovoPedido({ conta, onCriado }: { conta: Conta; onCriado: (id: string) 
   const [modeloId, setModeloId] = useState<string | null>(null);
   const [salvarComo, setSalvarComo] = useState<string | null>(null);
   const { modelos, recarregar: recarregarModelos } = useModelos(conta);
+  const { objetos, recarregar: recarregarObjetos } = useObjetos(conta);
+  const liberadas = conta.confirmacoes ?? {};
+  const algumaConfirmacao = Object.values(liberadas).some(Boolean);
 
   const atualizar = (k: string, d: Partial<Ponto>) => setPontos((l) => l.map((p) => (p.chave === k ? { ...p, ...d } : p)));
   const chaveRota = pontos.map((p) => `${p.lat},${p.lng}`).join("|");
@@ -328,6 +358,13 @@ function NovoPedido({ conta, onCriado }: { conta: Conta; onCriado: (id: string) 
     if (d.tipo_pedido && conta.tipos_pedido.some((t) => t.chave === d.tipo_pedido)) setTipoPedido(d.tipo_pedido);
     setUrgente(Boolean(d.urgente));
     setObs(d.observacoes ?? "");
+    if (d.metodo && conta.metodos.includes(d.metodo)) setMetodo(d.metodo);
+    // agora ou agendado, como foi salvo (agendado: a mesma hora, no próximo dia possível)
+    if (conta.modelo_horario !== false && d.agendar != null) {
+      const agendado = d.agendar || !conta.pode_express;
+      setAgendar(agendado);
+      if (agendado && d.hora) setHorario(proximoComHora(d.hora, conta.antecedencia_min));
+    }
     setModeloId(m.id);
     toast(`Modelo “${m.nome}” carregado. Mude o que precisar antes de enviar.`, "ok");
   }
@@ -338,6 +375,7 @@ function NovoPedido({ conta, onCriado }: { conta: Conta; onCriado: (id: string) 
     const chaves = pontos.map((p) => p.chave);
     const dados: DadosModelo = {
       tipo_pedido: tipoPedido, urgente, observacoes: obs.trim() || undefined,
+      agendar, hora: agendar && horario ? horario.slice(11, 16) : undefined, metodo: conta.cobranca === "pre_pago" ? metodo : undefined,
       pontos: pontos.map(({ chave, ...p }) => { void chave; return p; }),
       itens: itens.map(({ chave, ...x }) => { void chave; return { ...x, coleta: x.coleta ? String(chaves.indexOf(x.coleta)) : "", entrega: x.entrega ? String(chaves.indexOf(x.entrega)) : "" }; }),
     };
@@ -349,6 +387,26 @@ function NovoPedido({ conta, onCriado }: { conta: Conta; onCriado: (id: string) 
     setSalvarComo(null);
     toast(existente ? `Modelo “${nome}” atualizado.` : `Modelo “${nome}” salvo. Ele aparece no topo do próximo pedido.`, "ok");
     void recarregarModelos();
+  }
+
+  async function salvarObjeto(x: ItemForm) {
+    const k = conta.categorias.find((c) => c.id === x.categoria_id);
+    const sugestao = x.descricao.trim() || k?.nome || "Objeto";
+    const nome = prompt("Nome do objeto (aparece em Meus objetos):", sugestao)?.trim();
+    if (!nome) return;
+    const existente = objetos.find((o) => o.nome.toLowerCase() === nome.toLowerCase());
+    const { error } = existente
+      ? await supabase().from("cliente_objetos").update({ dados: dadosDoObjeto(x) }).eq("id", existente.id)
+      : await supabase().from("cliente_objetos").insert({ empresa_id: conta.id, nome: nome.slice(0, 80), dados: dadosDoObjeto(x) });
+    if (error) return toast(traduzir(error.message), "erro");
+    toast(existente ? `Objeto “${nome}” atualizado.` : `Objeto “${nome}” salvo. Ele aparece em Meus objetos.`, "ok");
+    void recarregarObjetos();
+  }
+  async function apagarObjeto(o: ObjetoSalvo) {
+    if (!confirm(`Apagar o objeto “${o.nome}”?`)) return;
+    const { error } = await supabase().from("cliente_objetos").delete().eq("id", o.id);
+    if (error) return toast(traduzir(error.message), "erro");
+    void recarregarObjetos();
   }
 
   async function apagarModelo(m: Modelo) {
@@ -364,9 +422,11 @@ function NovoPedido({ conta, onCriado }: { conta: Conta; onCriado: (id: string) 
     if (conta.categoria_obrigatoria && itens.some((x) => !x.categoria_id)) return toast("Escolha o tipo de cada item.", "aviso");
     const falta = faltandoItens(itens, conta.categorias);
     if (falta) return toast(falta, "aviso");
+    const jan = pontos.find((p) => p.janela_de && p.janela_ate && p.janela_de >= p.janela_ate);
+    if (jan) return toast(`O horário do ponto ${pontos.indexOf(jan) + 1} termina antes de começar.`, "aviso");
     setEnviando(true);
     const { data, error } = await supabase().rpc("criar_pedido", { dados: {
-      como_cliente: true, modelo_id: modeloId,
+      como_cliente: true, modelo_id: modeloId, objetos_usados: [...new Set(itens.map((x) => x.objeto_id).filter(Boolean))],
       quando: quandoIso, urgente, tipo_pedido: tipoPedido, metodo: conta.cobranca === "pre_pago" ? metodo : null, observacoes: obs.trim() || null,
       distancia_m: rota?.distanciaM ?? null, pontos: pontos.map(({ chave, ...p }) => { void chave; return p; }), itens: dadosItens } });
     setEnviando(false);
@@ -441,17 +501,25 @@ function NovoPedido({ conta, onCriado }: { conta: Conta; onCriado: (id: string) 
                   <CampoReferencias valor={p.referencias} lat={p.lat} lng={p.lng} onMudar={(r) => atualizar(p.chave, { referencias: r })} />
                 </div>
               )}
+              {(algumaConfirmacao || conta.pode_janela) && (
+                <OpcoesPonto tipo={p.tipo} valor={p} onMudar={(d) => atualizar(p.chave, d)} liberadas={liberadas} padrao={conta.padrao_confirmacoes} comJanela={conta.pode_janela !== false} />
+              )}
             </div>
           )} />
           <div className="linha-botoes">
             <button type="button" className="botao-texto" onClick={() => setPontos((l) => [...l, ponto("entrega")])}><Plus size={15} /> Entrega</button>
             <button type="button" className="botao-texto" onClick={() => setPontos((l) => [...l, ponto("coleta")])}><Plus size={15} /> Coleta</button>
+            <button type="button" className="botao-texto" title="O motoboy volta ao primeiro endereço (ex.: devolver canhoto, maquininha ou documento assinado)"
+              onClick={() => setPontos((l) => { const o = l[0]; return o ? [...l, ponto("entrega", { endereco: o.endereco, lat: o.lat, lng: o.lng, contato_nome: o.contato_nome, contato_telefone: o.contato_telefone, instrucoes: "Retorno ao início" })] : l; })}>
+              <Undo2 size={15} aria-hidden /> Ida e volta
+            </button>
           </div>
         </div>
 
         <div className="cliente-cartao vidro">
           <span className="rotulo"><Boxes size={13} aria-hidden /> O que vai</span>
-          <ItensPedido itens={itens} onMudar={setItens} categorias={conta.categorias} pontos={pontos} semCategoria={!conta.categoria_obrigatoria} />
+          <ItensPedido itens={itens} onMudar={setItens} categorias={conta.categorias} pontos={pontos} semCategoria={!conta.categoria_obrigatoria}
+            objetos={conta.pode_objetos !== false ? objetos : undefined} onSalvarObjeto={conta.pode_objetos !== false ? salvarObjeto : undefined} onApagarObjeto={apagarObjeto} />
           {perigoso && <p className="alerta-perigo"><FlaskConical size={14} aria-hidden /> Produto perigoso: embale e identifique.</p>}
           <textarea placeholder="Observações (opcional)" value={obs} maxLength={1000} onChange={(e) => setObs(e.target.value)} />
         </div>
