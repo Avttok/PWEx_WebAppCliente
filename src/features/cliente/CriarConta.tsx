@@ -5,6 +5,7 @@ import { ArrowLeft, Building2, CheckCircle2, UserRound } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
 import { Logo } from "@/features/marca/Logo";
 import { CampoEndereco } from "@/features/corridas/CampoEndereco";
+import { MapaCorridas } from "@/features/corridas/MapaCorridas";
 
 const ERROS: Record<string, string> = {
   email_invalido: "E-mail inválido.", senha_curta: "A senha precisa de pelo menos 8 caracteres.", nome_invalido: "Informe o nome da empresa.",
@@ -72,6 +73,13 @@ export function CriarConta({ onVoltar, modo }: { onVoltar: () => void; modo: str
         <label className="campo"><span>Telefone / WhatsApp</span><input inputMode="tel" value={f.telefone} onChange={(e) => set({ telefone: e.target.value })} /></label>
         <label className="campo"><span>Endereço de coleta (opcional)</span>
           <CampoEndereco valor={f.endereco} onTexto={(t) => set({ endereco: t, lat: null, lng: null })} onEscolher={(x) => set({ endereco: x.descricao, lat: x.lat, lng: x.lng })} /></label>
+        {f.lat != null && f.lng != null && (
+          <div className="cliente-mapa" style={{ height: 200 }}>
+            <MapaCorridas paradas={[{ chave: "coleta", lat: f.lat, lng: f.lng, tipo: "coleta", rotulo: "1" }]} enquadrar={`${f.lat},${f.lng}`}
+              aoClicar={(lat, lng) => set({ lat, lng })} />
+          </div>
+        )}
+        {f.lat != null && <p className="dica" style={{ margin: "-6px 0 0" }}>Confira o ponto no mapa. Se não for ali, toque no lugar certo.</p>}
         <label className="campo"><span>E-mail</span><input type="email" required autoComplete="email" value={f.email} onChange={(e) => set({ email: e.target.value })} /></label>
         <label className="campo"><span>Senha (mínimo 8)</span><input type="password" required autoComplete="new-password" value={f.senha} onChange={(e) => set({ senha: e.target.value })} /></label>
         <input className="armadilha" tabIndex={-1} autoComplete="off" aria-hidden value={f.site} onChange={(e) => set({ site: e.target.value })} />
