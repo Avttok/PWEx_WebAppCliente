@@ -3,14 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Bike, Building2, Search, ShieldCheck } from "lucide-react";
 import { AJUDA, PUBLICOS, type Artigo, type Publico } from "./ajuda";
-import { RodapeSite, TopoSite } from "./Topo";
+import type { ReactNode } from "react";
 
 const ICONE = { cliente: Building2, motoboy: Bike, gestor: ShieldCheck } as const;
 const sem = (t: string) => t.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 
-/** Central de ajuda: escolha para quem é, busque, abra o artigo. /ajuda?p=motoboy&a=oferta abre direto. */
-export function CentralAjuda() {
-  const [publico, setPublico] = useState<Publico>("cliente");
+/** Central de ajuda: (se houver mais de um público) escolha para quem é, busque, abra o artigo. /ajuda?p=…&a=… abre direto. */
+export function CentralAjuda({ publicos, topo, rodape, lead }: { publicos: Publico[]; topo: ReactNode; rodape: ReactNode; lead: string }) {
+  const [publico, setPublico] = useState<Publico>(publicos[0]);
   const [aberto, setAberto] = useState<string | null>(null);
   const [busca, setBusca] = useState("");
   const alvo = useRef<HTMLDetailsElement | null>(null);
@@ -18,7 +18,7 @@ export function CentralAjuda() {
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
     const p = q.get("p") as Publico | null;
-    if (p && AJUDA[p]) setPublico(p);
+    if (p && publicos.includes(p) && AJUDA[p]) setPublico(p);
     const a = q.get("a");
     if (a) { setAberto(a); setTimeout(() => alvo.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 120); }
   }, []);
@@ -30,19 +30,19 @@ export function CentralAjuda() {
   }
 
   const termo = sem(busca.trim());
-  const secoes = useMemo(() => AJUDA[publico].map((s) => ({
+  const secoes = useMemo(() => (AJUDA[publico] ?? []).map((s) => ({
     ...s,
     artigos: s.artigos.filter((a) => !termo || termo.split(/\s+/).every((w) => sem(`${a.titulo} ${a.texto.join(" ")}`).includes(w))),
   })).filter((s) => s.artigos.length > 0), [publico, termo]);
 
   return (
     <div className="lp">
-      <TopoSite atual="ajuda" />
+      {topo}
       <section className="lp-secao aj-cabeca">
         <h1>Central de ajuda</h1>
-        <p className="lp-lead">Como usar o site, o painel e o app da PW Express. Escolha para quem é a dúvida.</p>
-        <div className="aj-publicos" role="tablist" aria-label="Para quem">
-          {PUBLICOS.map((p) => {
+        <p className="lp-lead">{lead}</p>
+        {publicos.length > 1 && <div className="aj-publicos" role="tablist" aria-label="Para quem">
+          {PUBLICOS.filter((p) => publicos.includes(p.k)).map((p) => {
             const I = ICONE[p.k];
             return (
               <button key={p.k} role="tab" aria-selected={publico === p.k} className={publico === p.k ? "ativo" : ""} onClick={() => trocar(p.k)}>
@@ -50,12 +50,12 @@ export function CentralAjuda() {
               </button>
             );
           })}
-        </div>
+        </div>}
         <label className="aj-busca"><Search size={16} aria-hidden /><input placeholder="Buscar na ajuda" value={busca} onChange={(e) => setBusca(e.target.value)} /></label>
       </section>
 
       <section className="lp-secao aj-corpo">
-        {secoes.length === 0 && <p className="lp-lead">Nada encontrado para “{busca}”. Tente outra palavra ou troque o público acima.</p>}
+        {secoes.length === 0 && <p className="lp-lead">Nada encontrado para “{busca}”. Tente outra palavra.</p>}
         {secoes.map((s) => (
           <div key={s.titulo} className="aj-secao">
             <h2>{s.titulo}</h2>
@@ -69,7 +69,7 @@ export function CentralAjuda() {
           </div>
         ))}
       </section>
-      <RodapeSite />
+      {rodape}
     </div>
   );
 }

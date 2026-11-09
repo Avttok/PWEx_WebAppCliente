@@ -78,7 +78,7 @@ export function DownloadApp() {
           <details><summary>Apareceu “Atualize para continuar”</summary><p>A central pediu uma versão específica do app. Toque em <strong>Atualizar agora</strong>: ele baixa e instala sozinho.</p></details>
           <details><summary>Esqueci a senha</summary><p>Peça ao gestor da PW Express para criar uma nova senha para você.</p></details>
         </div>
-        <p className="lp-nota">Quer saber mais sobre o dia a dia no app? Veja a <Link href="/ajuda?p=motoboy">ajuda do motoboy</Link>.</p>
+        <p className="lp-nota">Quer saber mais sobre o dia a dia no app? Veja a <a href={`${(process.env.NEXT_PUBLIC_SITE_GESTOR_URL ?? "").replace(/\/$/, "")}/ajuda?p=motoboy`}>ajuda do motoboy</a>.</p>
       </section>
       <RodapeSite />
     </div>
