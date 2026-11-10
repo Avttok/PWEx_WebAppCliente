@@ -10,6 +10,10 @@ function Marca({ classe }: { classe: string }) {
       <img src="/marca/pw-ouro.png" alt="" className="marca-v marca-ouro" />
       <img src="/marca/pw-vermelho.png" alt="" className="marca-v marca-vermelho" />
       <img src="/marca/pw-violeta.png" alt="" className="marca-v marca-violeta" />
+      <img src="/marca/pw-azul.png" alt="" className="marca-v marca-azul" />
+      <img src="/marca/pw-verde.png" alt="" className="marca-v marca-verde" />
+      <img src="/marca/pw-branco.png" alt="" className="marca-v marca-branco" />
+      <img src="/marca/pw-preto.png" alt="" className="marca-v marca-preto" />
     </span>
   );
 }

@@ -6,19 +6,22 @@ import {
   PackagePlus, Plus, QrCode, Receipt, Truck, Undo2, UserRound, Wallet, X, Zap,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
-import { geo, type Referencia, type Rota } from "@/features/geo";
+import { distanciasColetaEntrega, geo, type Referencia, type Rota } from "@/features/geo";
 import { CampoEndereco } from "@/features/corridas/CampoEndereco";
 import { CampoReferencias } from "@/features/corridas/CampoReferencias";
 import { MapaCorridas, type PinoParada } from "@/features/corridas/MapaCorridas";
 import { trilhaDoPedido } from "@/lib/mapa/trilhaPedido";
 import { Dica, Tour, abrirTour, type PassoTour } from "@/features/ui/Tour";
-import { Compass, LifeBuoy } from "lucide-react";
+import { Compass, LifeBuoy, MessagesSquare, Palette } from "lucide-react";
+import { ESTILOS, useTema } from "@/features/tema/tema";
+import { Chat } from "@/features/chat/Chat";
 import { formatarDuracao, formatarKm } from "@/features/corridas/tipos";
 import { paraCampo, sugestaoHorario } from "@/features/corridas/planejadas";
 import { toast } from "@/features/ui/toast";
 import { moedaBr, quando, traduzir, type Categoria, type Orcamento } from "@/features/pedidos/tipos";
 import { ItensPedido, dadosDoObjeto, faltandoItens, itensParaEnvio, novoItem, type ItemForm, type ObjetoSalvo } from "@/features/pedidos/ItensPedido";
 import { OpcoesPonto, SelosPonto, type Confirmacao, type OpcoesDoPonto } from "@/features/pedidos/OpcoesPonto";
+import { PacotesPonto, pacotesDoPonto } from "@/features/pedidos/Pacotes";
 import { ListaOrdenavel } from "@/features/ui/ListaOrdenavel";
 import { Icone } from "@/features/ui/icones";
 
@@ -35,6 +38,10 @@ interface Conta {
   /** Peças do lego do pedido sob medida (o gestor liga/desliga no geral e por cliente). */
   confirmacoes?: Partial<Record<Confirmacao, boolean>>; padrao_confirmacoes?: Partial<Record<Confirmacao, boolean>>;
   pode_janela?: boolean; pode_objetos?: boolean; modelo_horario?: boolean;
+  /** Controles do gestor (geral e por cliente). */
+  pode_agendar?: boolean; pode_urgente?: boolean; max_entregas?: number | null; max_coletas?: number | null; agendar_max_dias?: number | null;
+  pode_ida_volta?: boolean; coleta_fixa?: boolean; pode_observacoes?: boolean; ve_faturas?: boolean; pode_chat?: boolean;
+  pedido_de?: string | null; pedido_ate?: string | null; modo_distancia?: string;
 }
 interface Modelo { id: string; nome: string; icone: string | null; dados: DadosModelo; usos: number; usado_em: string | null }
 interface DadosModelo {
@@ -49,7 +56,7 @@ interface PedidoC {
   orcamento: Orcamento | null; cobranca: "credito" | "pre_pago"; pagamento_status: string; pagamento_metodo: string | null; fatura_id: string | null;
   observacoes: string | null; recusa_motivo: string | null; criado_em: string; concluido_em: string | null; cancelado_em: string | null;
   pontos: ({ id: string; tipo: "coleta" | "entrega"; endereco: string; lat: number; lng: number; contato_nome: string | null; status: string; concluido_em: string | null; recebedor_nome: string | null; codigo?: string | null } & OpcoesDoPonto)[];
-  itens: { descricao: string; quantidade: number; peso_kg: number | null; categoria: string | null; categoria_id?: string | null; icone?: string | null; perigoso: boolean }[];
+  itens: { id?: string; coleta_id?: string | null; entrega_id?: string | null; descricao: string; quantidade: number; peso_kg: number | null; categoria: string | null; categoria_id?: string | null; icone?: string | null; perigoso: boolean }[];
   motoboys: string[]; codigos: string[];
 }
 interface FaturaC {
@@ -70,7 +77,7 @@ const ATIVOS: StatusP[] = ["recebido", "aprovado", "roteirizado", "em_rota"];
 const CICLO: Record<string, string> = { diario: "todo dia", semanal: "toda semana", quinzenal: "a cada 15 dias", mensal: "todo mês", manual: "quando combinado" };
 const dataBr = (d: string | null) => (d ? new Date(`${d.slice(0, 10)}T12:00:00`).toLocaleDateString("pt-BR") : "—");
 
-type Aba = "pedidos" | "novo" | "faturas" | "conta";
+type Aba = "pedidos" | "novo" | "faturas" | "chat" | "conta";
 
 /** Painel do cliente. */
 export function PainelCliente() {
@@ -108,7 +115,8 @@ export function PainelCliente() {
       </div>
       <Tour id="cliente" passos={TOUR_CLIENTE} />
       <div className="segmentado abas-cliente">
-        {([["pedidos", "Pedidos", Package], ["novo", "Novo pedido", PackagePlus], ["faturas", conta.cobranca === "credito" ? "Faturas" : "Pagamentos", Receipt], ["conta", "Minha conta", Building2]] as [Aba, string, typeof Package][]).map(([k, r, I]) => (
+        {([["pedidos", "Pedidos", Package], ["novo", "Novo pedido", PackagePlus], ["faturas", conta.cobranca === "credito" ? "Faturas" : "Pagamentos", Receipt], ["chat", "Conversa", MessagesSquare], ["conta", "Minha conta", Building2]] as [Aba, string, typeof Package][])
+          .filter(([k]) => (k !== "faturas" || conta.ve_faturas !== false) && (k !== "chat" || conta.pode_chat === true)).map(([k, r, I]) => (
           <button key={k} type="button" data-tour={`aba-${k}`} className={aba === k ? "ativo" : ""} onClick={() => { setAba(k); setAberto(null); }}>
             <I size={14} aria-hidden /> {r}{k === "faturas" && abertas.length > 0 && <span className="filtro-n">{abertas.length}</span>}
           </button>
@@ -118,7 +126,8 @@ export function PainelCliente() {
         ? <DetalhePedido pedido={pedido} conta={conta} onVoltar={() => setAberto(null)} onMudou={carregar} />
         : <ListaPedidos pedidos={pedidos} onAbrir={setAberto} onNovo={() => setAba("novo")} />)}
       {aba === "novo" && <NovoPedido conta={conta} onCriado={async (id) => { await carregar(); setAba("pedidos"); setAberto(id); }} />}
-      {aba === "faturas" && <Faturas conta={conta} faturas={faturas} pedidos={pedidos} />}
+      {aba === "chat" && conta.pode_chat === true && <div className="cliente-cartao vidro" style={{ padding: 0, overflow: "hidden" }}><ChatCliente /></div>}
+      {aba === "faturas" && conta.ve_faturas !== false && <Faturas conta={conta} faturas={faturas} pedidos={pedidos} />}
       {aba === "conta" && <MinhaConta conta={conta} />}
     </div>
   );
@@ -232,11 +241,12 @@ function DetalhePedido({ pedido: p, conta, onVoltar, onMudou }: { pedido: Pedido
                 {x.contato_nome && <span className="dica"> · {x.contato_nome}</span>}
                 {x.concluido_em && <div className="dica"><CheckCircle2 size={12} aria-hidden /> {quando(x.concluido_em)}{x.recebedor_nome ? ` · recebido por ${x.recebedor_nome}` : ""}</div>}
                 <SelosPonto p={x} />
+                {x.tipo === "entrega" && p.itens.some((it) => it.entrega_id !== undefined) && <PacotesPonto itens={pacotesDoPonto(p.itens, x, p.pontos.filter((y) => y.tipo === "entrega").map((y) => y.id))} />}
               </div>
             </li>
           ))}
         </ol>
-        {p.itens.length > 0 && (
+        {p.itens.length > 0 && !p.itens.some((it) => it.entrega_id !== undefined) && (
           <div className="itens-lista">
             {p.itens.map((it, i) => (
               <span key={i} className="chip">{it.perigoso ? <FlaskConical size={12} style={{ color: "var(--vermelho)" }} aria-label="Perigoso" /> : <Icone nome={it.icone} size={12} />} {it.quantidade}× {it.descricao}</span>
@@ -295,6 +305,14 @@ function useObjetos(conta: Conta) {
 }
 
 /** Próximo horário com esta hora (HH:MM) que respeita a antecedência mínima. */
+/** Fora do horário de pedidos na hora (pedido_de/pedido_ate, HH:MM; pode virar a meia-noite). */
+function foraDoHorario(c: { pedido_de?: string | null; pedido_ate?: string | null }): boolean {
+  if (!c.pedido_de || !c.pedido_ate) return false;
+  const d = new Date(), agora = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const de = c.pedido_de.slice(0, 5), ate = c.pedido_ate.slice(0, 5);
+  return de <= ate ? agora < de || agora > ate : agora < de && agora > ate;
+}
+
 function proximoComHora(hora: string, antecedenciaMin: number): string {
   const [h, m] = hora.split(":").map(Number);
   const d = new Date(); d.setSeconds(0, 0); d.setHours(h || 0, m || 0);
@@ -306,7 +324,9 @@ function NovoPedido({ conta, onCriado }: { conta: Conta; onCriado: (id: string) 
   const coletaPadrao = (): Ponto => ponto("coleta", conta.endereco ? { endereco: conta.endereco, lat: conta.lat, lng: conta.lng, instrucoes: conta.instrucoes_coleta ?? "" } : {});
   const [pontos, setPontos] = useState<Ponto[]>(() => [coletaPadrao(), ponto("entrega")]);
   const [itens, setItens] = useState<ItemForm[]>([]);
-  const [agendar, setAgendar] = useState(!conta.pode_express);
+  const podeAgendar = conta.pode_agendar !== false;
+  const podeAgora = conta.pode_express && !foraDoHorario(conta);
+  const [agendar, setAgendar] = useState(!podeAgora && podeAgendar);
   const [horario, setHorario] = useState(() => paraCampo(sugestaoHorario(Math.max(60, conta.antecedencia_min))));
   const [tipoPedido, setTipoPedido] = useState(conta.tipos_pedido[0]?.chave ?? "padrao");
   const [urgente, setUrgente] = useState(false);
@@ -324,6 +344,10 @@ function NovoPedido({ conta, onCriado }: { conta: Conta; onCriado: (id: string) 
   const liberadas = conta.confirmacoes ?? {};
   const algumaConfirmacao = Object.values(liberadas).some(Boolean);
 
+  const nEntregas = pontos.filter((p) => p.tipo === "entrega").length, nColetas = pontos.filter((p) => p.tipo === "coleta").length;
+  const podeEntrega = !conta.max_entregas || nEntregas < conta.max_entregas;
+  const podeColeta = !conta.coleta_fixa && (!conta.max_coletas || nColetas < conta.max_coletas);
+  const fixa = (p: Ponto) => Boolean(conta.coleta_fixa) && p.tipo === "coleta" && pontos.findIndex((x) => x.tipo === "coleta") === pontos.indexOf(p);
   const atualizar = (k: string, d: Partial<Ponto>) => setPontos((l) => l.map((p) => (p.chave === k ? { ...p, ...d } : p)));
   const chaveRota = pontos.map((p) => `${p.lat},${p.lng}`).join("|");
   useEffect(() => {
@@ -333,15 +357,26 @@ function NovoPedido({ conta, onCriado }: { conta: Conta; onCriado: (id: string) 
     return () => clearTimeout(t);
   }, [chaveRota]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // distância pelas ruas da coleta até cada entrega (base do preço "soma das entregas")
+  const chaveDist = pontos.map((p) => `${p.tipo}${p.lat},${p.lng}`).join("|");
+  const [distEnt, setDistEnt] = useState<(number | null)[]>([]);
+  useEffect(() => {
+    if (pontos.some((p) => p.lat == null)) { setDistEnt([]); return; }
+    let vivo = true;
+    const t = setTimeout(() => distanciasColetaEntrega(pontos).then((d) => { if (vivo) setDistEnt(d); }).catch(() => {}), 500);
+    return () => { vivo = false; clearTimeout(t); };
+  }, [chaveDist]); // eslint-disable-line react-hooks/exhaustive-deps
+  const comDist = <T extends { tipo: string }>(p: T, i: number) => ({ ...p, dist_coleta_m: p.tipo === "entrega" ? distEnt[i] ?? null : null });
+
   const dadosItens = itensParaEnvio(itens, pontos.map((p) => p.chave));
   const quandoIso = agendar && horario ? new Date(horario).toISOString() : null;
-  const chaveOrc = JSON.stringify([tipoPedido, urgente, quandoIso, rota?.distanciaM, pontos.map((p) => [p.tipo, p.lat, p.lng]), dadosItens]);
+  const chaveOrc = JSON.stringify([tipoPedido, urgente, quandoIso, rota?.distanciaM, pontos.map((p) => [p.tipo, p.lat, p.lng]), distEnt, dadosItens]);
   useEffect(() => {
     if (pontos.some((p) => p.lat == null)) { setOrc(null); return; }
     const t = setTimeout(async () => {
       const { data } = await supabase().rpc("orcar_previa", { dados: {
         tipo: agendar ? "planejado" : "express", tipo_pedido: tipoPedido, quando: quandoIso, urgente, distancia_m: rota?.distanciaM ?? null,
-        pontos: pontos.map((p) => ({ tipo: p.tipo, lat: p.lat, lng: p.lng })), itens: dadosItens } });
+        pontos: pontos.map((p, i) => comDist({ tipo: p.tipo, lat: p.lat, lng: p.lng }, i)), itens: dadosItens } });
       setOrc((data as Orcamento) ?? null);
     }, 400);
     return () => clearTimeout(t);
@@ -356,12 +391,12 @@ function NovoPedido({ conta, onCriado }: { conta: Conta; onCriado: (id: string) 
     setPontos(novos.length >= 2 ? novos : [coletaPadrao(), ponto("entrega")]);
     setItens((d.itens ?? []).map((x) => ({ ...novoItem(x.categoria_id), ...x, coleta: idx(String(x.coleta ?? "")), entrega: idx(String(x.entrega ?? "")) })));
     if (d.tipo_pedido && conta.tipos_pedido.some((t) => t.chave === d.tipo_pedido)) setTipoPedido(d.tipo_pedido);
-    setUrgente(Boolean(d.urgente));
-    setObs(d.observacoes ?? "");
+    setUrgente(Boolean(d.urgente) && conta.pode_urgente !== false);
+    setObs(conta.pode_observacoes !== false ? d.observacoes ?? "" : "");
     if (d.metodo && conta.metodos.includes(d.metodo)) setMetodo(d.metodo);
     // agora ou agendado, como foi salvo (agendado: a mesma hora, no próximo dia possível)
     if (conta.modelo_horario !== false && d.agendar != null) {
-      const agendado = d.agendar || !conta.pode_express;
+      const agendado = (d.agendar || !podeAgora) && podeAgendar;
       setAgendar(agendado);
       if (agendado && d.hora) setHorario(proximoComHora(d.hora, conta.antecedencia_min));
     }
@@ -422,13 +457,15 @@ function NovoPedido({ conta, onCriado }: { conta: Conta; onCriado: (id: string) 
     if (conta.categoria_obrigatoria && itens.some((x) => !x.categoria_id)) return toast("Escolha o tipo de cada item.", "aviso");
     const falta = faltandoItens(itens, conta.categorias);
     if (falta) return toast(falta, "aviso");
+    if (!agendar && !podeAgora) return toast(podeAgendar ? "Agora não dá para pedir na hora. Escolha Agendar." : "Agora não dá para fazer pedidos. Fale com a PW Express.", "aviso");
+    if (agendar && horario && conta.agendar_max_dias && new Date(horario).getTime() > Date.now() + conta.agendar_max_dias * 86_400_000) return toast(`Dá para agendar até ${conta.agendar_max_dias} dias à frente.`, "aviso");
     const jan = pontos.find((p) => p.janela_de && p.janela_ate && p.janela_de >= p.janela_ate);
     if (jan) return toast(`O horário do ponto ${pontos.indexOf(jan) + 1} termina antes de começar.`, "aviso");
     setEnviando(true);
     const { data, error } = await supabase().rpc("criar_pedido", { dados: {
       como_cliente: true, modelo_id: modeloId, objetos_usados: [...new Set(itens.map((x) => x.objeto_id).filter(Boolean))],
       quando: quandoIso, urgente, tipo_pedido: tipoPedido, metodo: conta.cobranca === "pre_pago" ? metodo : null, observacoes: obs.trim() || null,
-      distancia_m: rota?.distanciaM ?? null, pontos: pontos.map(({ chave, ...p }) => { void chave; return p; }), itens: dadosItens } });
+      distancia_m: rota?.distanciaM ?? null, pontos: pontos.map(({ chave, ...p }, i) => { void chave; return comDist(p, i); }), itens: dadosItens } });
     setEnviando(false);
     if (error) return toast(traduzir(error.message), "erro");
     toast("Recebemos o seu pedido.", "ok", { titulo: "Pedido enviado" });
@@ -457,11 +494,14 @@ function NovoPedido({ conta, onCriado }: { conta: Conta; onCriado: (id: string) 
         <div className="cliente-cartao vidro">
           <span className="rotulo">Quando</span>
           <div className="segmentado" style={{ gridTemplateColumns: "1fr 1fr" }}>
-            <button type="button" className={!agendar ? "ativo" : ""} disabled={!conta.pode_express} onClick={() => setAgendar(false)}><Zap size={14} aria-hidden /> Agora</button>
-            <button type="button" className={agendar ? "ativo" : ""} onClick={() => setAgendar(true)}><CalendarClock size={14} aria-hidden /> Agendar</button>
+            <button type="button" className={!agendar ? "ativo" : ""} disabled={!podeAgora} onClick={() => setAgendar(false)}><Zap size={14} aria-hidden /> Agora</button>
+            <button type="button" className={agendar ? "ativo" : ""} disabled={!podeAgendar} onClick={() => setAgendar(true)}><CalendarClock size={14} aria-hidden /> Agendar</button>
           </div>
-          {!conta.pode_express && <p className="dica" style={{ margin: 0 }}><Lock size={11} aria-hidden /> Agende com pelo menos {conta.antecedencia_min} min.</p>}
-          {agendar && <input type="datetime-local" value={horario} onChange={(e) => setHorario(e.target.value)} />}
+          {!podeAgendar && <p className="dica" style={{ margin: 0 }}><Lock size={11} aria-hidden /> Sua conta faz só pedidos na hora.</p>}
+          {conta.pode_express && foraDoHorario(conta) && <p className="dica" style={{ margin: 0 }}><Clock size={11} aria-hidden /> Pedidos na hora: das {conta.pedido_de?.slice(0, 5)} às {conta.pedido_ate?.slice(0, 5)}.{podeAgendar ? " Agora, só agendado." : ""}</p>}
+          {!conta.pode_express && podeAgendar && <p className="dica" style={{ margin: 0 }}><Lock size={11} aria-hidden /> Agende com pelo menos {conta.antecedencia_min} min.</p>}
+          {agendar && <input type="datetime-local" value={horario} min={paraCampo(new Date(Date.now() + conta.antecedencia_min * 60_000))}
+            max={conta.agendar_max_dias ? paraCampo(new Date(Date.now() + conta.agendar_max_dias * 86_400_000)) : undefined} onChange={(e) => setHorario(e.target.value)} />}
           {conta.tipos_pedido.length > 1 && (
             <div className="tipos-pedido">
               {conta.tipos_pedido.map((t) => (
@@ -471,7 +511,7 @@ function NovoPedido({ conta, onCriado }: { conta: Conta; onCriado: (id: string) 
               ))}
             </div>
           )}
-          <label className="opcao"><span><Zap size={14} aria-hidden style={{ color: "var(--vermelho)" }} /> Urgente<Dica titulo="Urgente" texto="Passa na frente: a rota sai sozinha, não espera juntar com outros pedidos e chega até motoboys fora do raio deles. Pode custar mais, conforme o combinado com a PW Express." /></span><input type="checkbox" role="switch" checked={urgente} onChange={(e) => setUrgente(e.target.checked)} /></label>
+          {conta.pode_urgente !== false && <label className="opcao"><span><Zap size={14} aria-hidden style={{ color: "var(--vermelho)" }} /> Urgente<Dica titulo="Urgente" texto="Passa na frente: a rota sai sozinha, não espera juntar com outros pedidos e chega até motoboys fora do raio deles. Pode custar mais, conforme o combinado com a PW Express." /></span><input type="checkbox" role="switch" checked={urgente} onChange={(e) => setUrgente(e.target.checked)} /></label>}
         </div>
 
         <div className="cliente-cartao vidro">
@@ -481,15 +521,16 @@ function NovoPedido({ conta, onCriado }: { conta: Conta; onCriado: (id: string) 
               <div className="parada-topo">
                 {pontos.length > 2 && alca}
                 <span className={`pino-mini ${p.tipo}`}>{i + 1}</span>
-                <select value={p.tipo} onChange={(e) => atualizar(p.chave, { tipo: e.target.value as Ponto["tipo"] })}><option value="coleta">Coleta</option><option value="entrega">Entrega</option></select>
+                {fixa(p) ? <span className="selo"><Lock size={11} aria-hidden /> Coleta</span>
+                  : <select value={p.tipo} onChange={(e) => atualizar(p.chave, { tipo: e.target.value as Ponto["tipo"] })}><option value="coleta" disabled={!podeColeta && p.tipo !== "coleta"}>Coleta</option><option value="entrega" disabled={!podeEntrega && p.tipo !== "entrega"}>Entrega</option></select>}
                 <span className="espaco" />
-                {pontos.length > 2 && <button type="button" className="icone" title="Remover" onClick={() => setPontos((l) => l.filter((x) => x.chave !== p.chave))}><X size={14} /></button>}
+                {pontos.length > 2 && !fixa(p) && <button type="button" className="icone" title="Remover" onClick={() => setPontos((l) => l.filter((x) => x.chave !== p.chave))}><X size={14} /></button>}
               </div>
-              <CampoEndereco valor={p.endereco} onTexto={(t) => atualizar(p.chave, { endereco: t, lat: null, lng: null })} onEscolher={(e) => atualizar(p.chave, { endereco: e.descricao, lat: e.lat, lng: e.lng })} />
+              {fixa(p) ? <p className="dica" style={{ margin: 0 }}><strong>{p.endereco || "Endereço de coleta da conta"}</strong> (a coleta é sempre aqui)</p> : <CampoEndereco valor={p.endereco} onTexto={(t) => atualizar(p.chave, { endereco: t, lat: null, lng: null })} onEscolher={(e) => atualizar(p.chave, { endereco: e.descricao, lat: e.lat, lng: e.lng })} />}
               <div className="parada-acoes">
-                <button type="button" className={`link ${escolhendo === p.chave ? "ativo" : ""}`} onClick={() => setEscolhendo(escolhendo === p.chave ? null : p.chave)}>
+                {!fixa(p) && <button type="button" className={`link ${escolhendo === p.chave ? "ativo" : ""}`} onClick={() => setEscolhendo(escolhendo === p.chave ? null : p.chave)}>
                   <MapPinned size={13} aria-hidden /> {escolhendo === p.chave ? "Clique no mapa…" : "Marcar no mapa"}
-                </button>
+                </button>}
                 {p.lat != null ? <span className="ok"><CheckCircle2 size={13} aria-hidden /> Localizado</span> : <span className="pendente">Sem localização</span>}
                 <button type="button" className="link" onClick={() => setAberto(aberto === p.chave ? null : p.chave)}><UserRound size={13} aria-hidden /> {aberto === p.chave ? "Menos" : "Contato e referências"}</button>
               </div>
@@ -501,27 +542,35 @@ function NovoPedido({ conta, onCriado }: { conta: Conta; onCriado: (id: string) 
                   <CampoReferencias valor={p.referencias} lat={p.lat} lng={p.lng} onMudar={(r) => atualizar(p.chave, { referencias: r })} />
                 </div>
               )}
+              {p.tipo === "entrega" && (
+                <div className="itens-ponto">
+                  <span className="rotulo"><Boxes size={12} aria-hidden /> O que vai para esta entrega{itens.some((x) => x.entrega === p.chave) && <span className="filtro-n">{itens.filter((x) => x.entrega === p.chave).length}</span>}</span>
+                  <ItensPedido itens={itens} onMudar={setItens} categorias={conta.categorias} pontos={pontos} semCategoria={!conta.categoria_obrigatoria} entregaFixa={p.chave} compacto
+                    objetos={conta.pode_objetos !== false ? objetos : undefined} onSalvarObjeto={conta.pode_objetos !== false ? salvarObjeto : undefined} onApagarObjeto={apagarObjeto} />
+                </div>
+              )}
               {(algumaConfirmacao || conta.pode_janela) && (
                 <OpcoesPonto tipo={p.tipo} valor={p} onMudar={(d) => atualizar(p.chave, d)} liberadas={liberadas} padrao={conta.padrao_confirmacoes} comJanela={conta.pode_janela !== false} />
               )}
             </div>
           )} />
           <div className="linha-botoes">
-            <button type="button" className="botao-texto" onClick={() => setPontos((l) => [...l, ponto("entrega")])}><Plus size={15} /> Entrega</button>
-            <button type="button" className="botao-texto" onClick={() => setPontos((l) => [...l, ponto("coleta")])}><Plus size={15} /> Coleta</button>
-            <button type="button" className="botao-texto" title="O motoboy volta ao primeiro endereço (ex.: devolver canhoto, maquininha ou documento assinado)"
+            <button type="button" className="botao-texto" disabled={!podeEntrega} onClick={() => setPontos((l) => [...l, ponto("entrega")])}><Plus size={15} /> Entrega</button>
+            {!conta.coleta_fixa && <button type="button" className="botao-texto" disabled={!podeColeta} onClick={() => setPontos((l) => [...l, ponto("coleta")])}><Plus size={15} /> Coleta</button>}
+            {conta.pode_ida_volta !== false && <button type="button" className="botao-texto" disabled={!podeEntrega} title="O motoboy volta ao primeiro endereço (ex.: devolver canhoto, maquininha ou documento assinado)"
               onClick={() => setPontos((l) => { const o = l[0]; return o ? [...l, ponto("entrega", { endereco: o.endereco, lat: o.lat, lng: o.lng, contato_nome: o.contato_nome, contato_telefone: o.contato_telefone, instrucoes: "Retorno ao início" })] : l; })}>
               <Undo2 size={15} aria-hidden /> Ida e volta
-            </button>
+            </button>}
           </div>
+          {(conta.max_entregas || conta.max_coletas) ? <p className="dica" style={{ margin: 0 }}>Até {conta.max_entregas ? `${conta.max_entregas} entregas` : ""}{conta.max_entregas && conta.max_coletas ? " e " : ""}{conta.max_coletas ? `${conta.max_coletas} coletas` : ""} por pedido.</p> : null}
         </div>
 
         <div className="cliente-cartao vidro">
-          <span className="rotulo"><Boxes size={13} aria-hidden /> O que vai</span>
-          <ItensPedido itens={itens} onMudar={setItens} categorias={conta.categorias} pontos={pontos} semCategoria={!conta.categoria_obrigatoria}
+          <span className="rotulo"><Boxes size={13} aria-hidden /> {nEntregas > 1 ? "O que vai para todas as entregas" : "Outros itens"}<Dica titulo="Itens" texto="Cada pacote fica no endereço para onde vai (em cada entrega, acima). Aqui ficam os itens que vão para todas as entregas ou que você ainda não ligou a um endereço." /></span>
+          <ItensPedido itens={itens} onMudar={setItens} categorias={conta.categorias} pontos={pontos} semCategoria={!conta.categoria_obrigatoria} soGerais compacto
             objetos={conta.pode_objetos !== false ? objetos : undefined} onSalvarObjeto={conta.pode_objetos !== false ? salvarObjeto : undefined} onApagarObjeto={apagarObjeto} />
           {perigoso && <p className="alerta-perigo"><FlaskConical size={14} aria-hidden /> Produto perigoso: embale e identifique.</p>}
-          <textarea placeholder="Observações (opcional)" value={obs} maxLength={1000} onChange={(e) => setObs(e.target.value)} />
+          {conta.pode_observacoes !== false && <textarea placeholder="Observações (opcional)" value={obs} maxLength={1000} onChange={(e) => setObs(e.target.value)} />}
         </div>
       </div>
 
@@ -635,12 +684,39 @@ function MinhaConta({ conta }: { conta: Conta }) {
         </div>
         <p className="dica" style={{ margin: 0 }}>Para mudar algum dado, fale com a PW Express.</p>
       </div>
+      <CoresDoSite />
       {conta.troca_senha !== false && <TrocarSenha />}
       <div className="bloco vidro linha-botoes">
         <a className="botao-texto" href="/ajuda?p=cliente" target="_blank" rel="noopener"><LifeBuoy size={15} aria-hidden /> Central de ajuda</a>
         <button type="button" className="botao-texto" onClick={() => abrirTour("cliente")}><Compass size={15} aria-hidden /> Ver o tour</button>
       </div>
     </>
+  );
+}
+
+function ChatCliente() {
+  const [eu, setEu] = useState<string | null>(null);
+  useEffect(() => { void supabase().auth.getUser().then(({ data }) => setEu(data.user?.id ?? null)); }, []);
+  if (!eu) return <p className="subtitulo" style={{ padding: 24 }}>Carregando…</p>;
+  return <Chat meuId={eu} gestor={false} />;
+}
+
+function CoresDoSite() {
+  const { estilo, definirEstilo } = useTema();
+  return (
+    <div className="cliente-cartao vidro">
+      <div className="menu-cores" style={{ padding: 0 }}>
+        <div className="menu-cores-topo"><Palette size={17} aria-hidden /> Cores do site<small>{ESTILOS.find((e) => e.k === estilo)?.rotulo}</small></div>
+        <div className="menu-cores-bolas" style={{ justifyContent: "flex-start", gap: 12 }}>
+          {ESTILOS.map((e) => (
+            <button key={e.k} type="button" title={e.rotulo} aria-label={e.rotulo} className={`menu-cor${estilo === e.k ? " ativo" : ""}`} onClick={() => definirEstilo(e.k)}>
+              <span style={{ background: `linear-gradient(135deg, ${e.fundo} 50%, ${e.cor} 50%)` }} />
+            </button>
+          ))}
+        </div>
+      </div>
+      <p className="dica" style={{ margin: 0 }}>Fica guardado neste aparelho. O claro/escuro fica no botão do topo.</p>
+    </div>
   );
 }
 

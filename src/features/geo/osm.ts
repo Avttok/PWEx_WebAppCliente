@@ -8,6 +8,72 @@ const OVERPASS = [
   "https://overpass.private.coffee/api/interpreter",
   "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
 ];
+const VALHALLA = "https://valhalla1.openstreetmap.de";
+
+/** Provedor e perfil das rotas (vem de Configurações → rota_provedor / rota_perfil). */
+export const preferenciaRota: { provedor: "valhalla" | "osrm"; perfil: string } = { provedor: "valhalla", perfil: "motorcycle" };
+export function definirPreferenciaRota(provedor?: unknown, perfil?: unknown) {
+  preferenciaRota.provedor = provedor === "osrm" ? "osrm" : "valhalla";
+  if (typeof perfil === "string" && perfil) preferenciaRota.perfil = perfil;
+}
+
+function decodificar6(s: string): [number, number][] {
+  const out: [number, number][] = [];
+  let i = 0, lat = 0, lng = 0;
+  while (i < s.length) {
+    for (const k of [0, 1]) {
+      let b, sh = 0, r = 0;
+      do { b = s.charCodeAt(i++) - 63; r |= (b & 0x1f) << sh; sh += 5; } while (b >= 0x20 && i < s.length);
+      const d = r & 1 ? ~(r >> 1) : r >> 1;
+      if (k === 0) lat += d; else lng += d;
+    }
+    out.push([lat / 1e6, lng / 1e6]);
+  }
+  return out;
+}
+/** Polyline precisão 5 (o formato que o resto do sistema guarda). */
+export function codificarPolyline(pts: [number, number][]): string {
+  let o = "", pl = 0, pg = 0;
+  const v = (x: number) => { x = x < 0 ? ~(x << 1) : x << 1; let t = ""; while (x >= 0x20) { t += String.fromCharCode((0x20 | (x & 0x1f)) + 63); x >>= 5; } return t + String.fromCharCode(x + 63); };
+  for (const [lat, lng] of pts) { const a = Math.round(lat * 1e5), g = Math.round(lng * 1e5); o += v(a - pl) + v(g - pg); pl = a; pg = g; }
+  return o;
+}
+
+async function rotaValhalla(pontos: { lat: number; lng: number }[], perfil: string): Promise<Rota | null> {
+  const r = await fetch(`${VALHALLA}/route`, {
+    method: "POST", headers: { "content-type": "application/json" }, signal: AbortSignal.timeout(6000),
+    body: JSON.stringify({ locations: pontos.map((p) => ({ lat: p.lat, lon: p.lng })), costing: ["motorcycle", "auto", "bicycle", "motor_scooter"].includes(perfil) ? perfil : "motorcycle",
+      directions_options: { units: "kilometers" }, directions_type: "none" }),
+  });
+  if (!r.ok) return null;
+  const j = (await r.json()) as { trip?: { legs?: { shape: string }[]; summary?: { length: number; time: number } } };
+  const legs = j.trip?.legs;
+  if (!legs?.length || !j.trip?.summary) return null;
+  const linha = legs.flatMap((l) => decodificar6(l.shape));
+  if (linha.length < 2) return null;
+  return { distanciaM: Math.round(j.trip.summary.length * 1000), duracaoS: Math.round(j.trip.summary.time), polyline: codificarPolyline(linha) };
+}
+
+const CACHE_DIST = new Map<string, number>();
+/**
+ * Distância pelas ruas da coleta até cada entrega (a coleta anterior na lista; sem ela, a primeira).
+ * Alinhado com `pontos`: null nas coletas e onde o mapa não respondeu. É a base do preço "soma das entregas".
+ */
+export async function distanciasColetaEntrega(pontos: { tipo: "coleta" | "entrega"; lat: number | null; lng: number | null }[]): Promise<(number | null)[]> {
+  let col = pontos.find((p) => p.tipo === "coleta" && p.lat != null) ?? null;
+  const pares = pontos.map((p) => { if (p.tipo === "coleta") { if (p.lat != null) col = p; return null; } return col && p.lat != null ? [col, p] as const : null; });
+  return Promise.all(pares.map(async (par) => {
+    if (!par) return null;
+    const k = `${par[0].lat},${par[0].lng}>${par[1].lat},${par[1].lng}|${preferenciaRota.provedor}${preferenciaRota.perfil}`;
+    const tem = CACHE_DIST.get(k);
+    if (tem != null) return tem;
+    const r = await provedorOsm.calcularRota([{ lat: par[0].lat!, lng: par[0].lng! }, { lat: par[1].lat!, lng: par[1].lng! }]).catch(() => null);
+    if (!r) return null;
+    CACHE_DIST.set(k, r.distanciaM);
+    return r.distanciaM;
+  }));
+}
+
 /** Transporte não serve de referência (nomes de parada/rua). */
 const FORA = new Set(["bus", "bus_stop", "bus_station", "platform", "stop_position", "tram_stop", "subway", "subway_entrance", "taxi", "parking", "parking_entrance", "bicycle_parking", "motorcycle_parking", "bicycle_rental"]);
 
@@ -168,6 +234,11 @@ export const provedorOsm: ProvedorGeo = {
 
   async calcularRota(pontos) {
     if (pontos.length < 2) return null;
+    // provedor escolhido em Configurações (Valhalla tem perfil de moto); se não responder, o OSRM
+    if (preferenciaRota.provedor === "valhalla") {
+      const v = await rotaValhalla(pontos, preferenciaRota.perfil).catch(() => null);
+      if (v) return v;
+    }
     const coords = pontos.map((p) => `${p.lng},${p.lat}`).join(";");
     const r = await fetch(`${OSRM}/route/v1/driving/${coords}?overview=full&geometries=polyline`);
     if (!r.ok) return null;

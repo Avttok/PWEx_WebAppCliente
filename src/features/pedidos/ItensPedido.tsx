@@ -62,7 +62,7 @@ export function faltandoItens(itens: ItemForm[], categorias: Categoria[]): strin
  * Itens do pedido: o cliente toca no tipo (botões com ícone) e só aparecem os campos que aquele tipo pede.
  * Ex.: documento não pede peso nem valor; peça automotiva pede valor declarado.
  */
-export function ItensPedido({ itens, onMudar, categorias, pontos, semCategoria = true, objetos, onSalvarObjeto, onApagarObjeto }: {
+export function ItensPedido({ itens, onMudar, categorias, pontos, semCategoria = true, objetos, onSalvarObjeto, onApagarObjeto, entregaFixa, soGerais, compacto }: {
   itens: ItemForm[];
   onMudar: (l: ItemForm[]) => void;
   categorias: Categoria[];
@@ -73,12 +73,21 @@ export function ItensPedido({ itens, onMudar, categorias, pontos, semCategoria =
   objetos?: ObjetoSalvo[];
   onSalvarObjeto?: (item: ItemForm) => void;
   onApagarObjeto?: (o: ObjetoSalvo) => void;
+  /** Itens de um ponto de entrega só (1 remessa ↔ 1 endereço): mostra só os dele, os novos já vão para ele e some o "Vai para". */
+  entregaFixa?: string;
+  /** Só os itens que não estão presos a uma entrega (vão para todas). */
+  soGerais?: boolean;
+  /** Botões menores (dentro do ponto). */
+  compacto?: boolean;
 }) {
+  const chavesEntrega = new Set(pontos.filter((p) => p.tipo === "entrega").map((p) => p.chave));
+  const visiveis = entregaFixa ? itens.filter((x) => x.entrega === entregaFixa) : soGerais ? itens.filter((x) => !x.entrega || !chavesEntrega.has(x.entrega)) : itens;
+  const novo = (categoria = ""): ItemForm => ({ ...novoItem(categoria), entrega: entregaFixa ?? "" });
   const mudar = (k: string, d: Partial<ItemForm>) => onMudar(itens.map((x) => (x.chave === k ? { ...x, ...d } : x)));
   const coletas = pontos.filter((p) => p.tipo === "coleta"), entregas = pontos.filter((p) => p.tipo === "entrega");
   const rot = (s: string, c: Campo) => (c === "obrigatorio" ? `${s} *` : s);
   return (
-    <div className="itens-pedido">
+    <div className={`itens-pedido${compacto ? " compacto" : ""}`}>
       {objetos && objetos.length > 0 && (
         <div className="itens-objetos" role="group" aria-label="Meus objetos">
           <span className="rotulo"><PackageCheck size={12} aria-hidden /> Meus objetos</span>
@@ -87,7 +96,7 @@ export function ItensPedido({ itens, onMudar, categorias, pontos, semCategoria =
               const k = categorias.find((c) => c.id === o.dados.categoria_id);
               return (
                 <span key={o.id} className="chip modelo">
-                  <button type="button" title="Colocar no pedido" onClick={() => onMudar([...itens, { ...novoItem(o.dados.categoria_id ?? ""), ...o.dados, objeto_id: o.id }])}>
+                  <button type="button" title="Colocar no pedido" onClick={() => onMudar([...itens, { ...novo(o.dados.categoria_id ?? ""), ...o.dados, objeto_id: o.id }])}>
                     <Icone nome={k?.icone ?? "box"} size={13} /> {o.nome}
                   </button>
                   {onApagarObjeto && <button type="button" className="tirar" aria-label={`Apagar o objeto ${o.nome}`} onClick={() => onApagarObjeto(o)}><X size={12} /></button>}
@@ -99,15 +108,15 @@ export function ItensPedido({ itens, onMudar, categorias, pontos, semCategoria =
       )}
       <div className="itens-tipos" role="group" aria-label="Adicionar item">
         {categorias.map((k) => (
-          <button key={k.id} type="button" className={`item-tipo ${k.perigoso ? "perigoso" : ""}`} onClick={() => onMudar([...itens, novoItem(k.id)])} title={k.descricao ?? k.nome}>
+          <button key={k.id} type="button" className={`item-tipo ${k.perigoso ? "perigoso" : ""}`} onClick={() => onMudar([...itens, novo(k.id)])} title={k.descricao ?? k.nome}>
             <Icone nome={k.icone} size={18} /><span>{k.nome}</span><Plus size={13} aria-hidden className="mais" />
           </button>
         ))}
         {semCategoria && (
-          <button type="button" className="item-tipo" onClick={() => onMudar([...itens, novoItem("")])}><Icone nome="box" size={18} /><span>Outro</span><Plus size={13} aria-hidden className="mais" /></button>
+          <button type="button" className="item-tipo" onClick={() => onMudar([...itens, novo("")])}><Icone nome="box" size={18} /><span>Outro</span><Plus size={13} aria-hidden className="mais" /></button>
         )}
       </div>
-      {itens.map((x) => {
+      {visiveis.map((x) => {
         const k = categorias.find((c) => c.id === x.categoria_id);
         const c = camposDe(k);
         return (
@@ -142,11 +151,11 @@ export function ItensPedido({ itens, onMudar, categorias, pontos, semCategoria =
                 {c.valor !== "oculto" && <label><span>{rot("Valor (R$)", c.valor)}</span><input inputMode="decimal" value={x.valor_declarado} onChange={(e) => mudar(x.chave, { valor_declarado: e.target.value })} /></label>}
               </div>
             )}
-            {(coletas.length > 1 || entregas.length > 1) && (
+            {(coletas.length > 1 || (entregas.length > 1 && !entregaFixa)) && (
               <div className="item-numeros">
                 {coletas.length > 1 && <label><span>Sai de</span><select value={x.coleta} onChange={(e) => mudar(x.chave, { coleta: e.target.value })}>
                   <option value="">Qualquer coleta</option>{coletas.map((p) => <option key={p.chave} value={p.chave}>{pontos.indexOf(p) + 1}. {p.endereco.split(",")[0] || "Coleta"}</option>)}</select></label>}
-                {entregas.length > 1 && <label><span>Vai para</span><select value={x.entrega} onChange={(e) => mudar(x.chave, { entrega: e.target.value })}>
+                {entregas.length > 1 && !entregaFixa && <label><span>Vai para</span><select value={x.entrega} onChange={(e) => mudar(x.chave, { entrega: e.target.value })}>
                   <option value="">Todas as entregas</option>{entregas.map((p) => <option key={p.chave} value={p.chave}>{pontos.indexOf(p) + 1}. {p.endereco.split(",")[0] || "Entrega"}</option>)}</select></label>}
               </div>
             )}
