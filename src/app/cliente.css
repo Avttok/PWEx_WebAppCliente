@@ -88,7 +88,7 @@ a.chip { text-decoration: none; }
 }
 
 /* ============================================================= cliente: renascimento */
-.abas-cliente { grid-template-columns: repeat(4, 1fr); max-width: 640px; }
+.abas-cliente { grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); max-width: 780px; }
 .abas-cliente button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .cliente-coluna { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .tipos-pedido { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }
@@ -103,7 +103,7 @@ a.chip { text-decoration: none; }
 .dados-conta > div { display: flex; flex-direction: column; gap: 3px; padding: 12px; border-radius: 14px; background: var(--vidro-sutil); border: 1px solid var(--borda); }
 .dados-conta strong { font-size: 14.5px; overflow-wrap: anywhere; }
 .titulo-linha .rotulo { margin: 0; }
-@media (max-width: 640px) { .abas-cliente { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 640px) { .abas-cliente { grid-template-columns: repeat(3, 1fr); } }
 .caixa-cadastro { max-width: 460px; gap: 12px; }
 .armadilha { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
 .cadastro-ok { display: grid; place-items: center; color: var(--verde); margin: 0; }

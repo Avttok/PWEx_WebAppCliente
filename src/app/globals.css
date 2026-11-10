@@ -1288,3 +1288,14 @@ a.chat-cartao:hover { border-color: var(--ouro); }
 .pacote-detalhe { margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px 12px; padding: 8px 10px; border-radius: 10px; background: var(--vidro-sutil); border: 1px solid var(--borda); }
 .pacote-detalhe dt { font-size: 11px; color: var(--texto-3); }
 .pacote-detalhe dd { margin: 0; font-size: 13px; font-weight: 600; }
+.selos-cargo { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.selo-cargo { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.menu-irmao { display: flex; align-items: center; justify-content: center; gap: 5px; margin: 6px 0 2px; padding-top: 8px; border-top: 1px solid var(--borda);
+--
+.chat-selos { display: inline-flex; gap: 4px; margin-left: 6px; vertical-align: middle; }
+.chat-selo { font-size: 10px; font-weight: 800; letter-spacing: 0.02em; padding: 1px 6px; border-radius: 99px; line-height: 1.5; border: 1px solid currentColor; }
+.chat-selo.dev { color: #ef4444; } .chat-selo.gestor { color: var(--ouro); } .chat-selo.motoboy { color: #22c55e; } .chat-selo.cliente { color: #38bdf8; }
+/* chat do cliente: altura da tela e sem moldura dupla */
+.cliente-chat .chat { height: min(calc(100dvh - 260px), 760px); min-height: 420px; }
+.cliente-chat .chat-cabeca small { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 2px; }
+@media (max-width: 860px) { .cliente-chat .chat { height: calc(100dvh - 300px); min-height: 380px; } }

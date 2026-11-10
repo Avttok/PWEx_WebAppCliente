@@ -42,6 +42,8 @@ interface Conta {
   pode_agendar?: boolean; pode_urgente?: boolean; max_entregas?: number | null; max_coletas?: number | null; agendar_max_dias?: number | null;
   pode_ida_volta?: boolean; coleta_fixa?: boolean; pode_observacoes?: boolean; ve_faturas?: boolean; pode_chat?: boolean;
   pedido_de?: string | null; pedido_ate?: string | null; modo_distancia?: string;
+  /** O que aparece da rota no mapa: feito, restante, motoboy, planejada, outras_paradas. */
+  ve_rota?: string[];
 }
 interface Modelo { id: string; nome: string; icone: string | null; dados: DadosModelo; usos: number; usado_em: string | null }
 interface DadosModelo {
@@ -126,7 +128,7 @@ export function PainelCliente() {
         ? <DetalhePedido pedido={pedido} conta={conta} onVoltar={() => setAberto(null)} onMudou={carregar} />
         : <ListaPedidos pedidos={pedidos} onAbrir={setAberto} onNovo={() => setAba("novo")} />)}
       {aba === "novo" && <NovoPedido conta={conta} onCriado={async (id) => { await carregar(); setAba("pedidos"); setAberto(id); }} />}
-      {aba === "chat" && conta.pode_chat === true && <div className="cliente-cartao vidro" style={{ padding: 0, overflow: "hidden" }}><ChatCliente /></div>}
+      {aba === "chat" && conta.pode_chat === true && <div className="cliente-chat"><ChatCliente /></div>}
       {aba === "faturas" && conta.ve_faturas !== false && <Faturas conta={conta} faturas={faturas} pedidos={pedidos} />}
       {aba === "conta" && <MinhaConta conta={conta} />}
     </div>
@@ -178,10 +180,14 @@ function ListaPedidos({ pedidos, onAbrir, onNovo }: { pedidos: PedidoC[]; onAbri
 
 function DetalhePedido({ pedido: p, conta, onVoltar, onMudou }: { pedido: PedidoC; conta: Conta; onVoltar: () => void; onMudou: () => void }) {
   const [motoboys, setMotoboys] = useState<{ lat: number; lng: number; nome: string; foto: string | null }[]>([]);
+  const [planejada, setPlanejada] = useState<string | null>(null);
+  const [outras, setOutras] = useState<{ lat: number; lng: number; tipo: "coleta" | "entrega"; feita: boolean }[]>([]);
+  // o que o gestor deixa o cliente ver da rota (Ajustes → Clientes → O que o cliente vê)
+  const ve = new Set(conta.ve_rota ?? ["feito", "motoboy"]);
   // feito: o caminho do motoboy com o seu pedido (da coleta em diante), pelas ruas
   const [trilha, setTrilha] = useState<[number, number][]>([]);
   useEffect(() => {
-    if (!conta.ve_ao_vivo || !["em_rota", "concluido"].includes(p.status)) { setTrilha([]); return; }
+    if (!conta.ve_ao_vivo || !ve.has("feito") || !["em_rota", "concluido"].includes(p.status)) { setTrilha([]); return; }
     let vivo = true;
     const buscar = () => trilhaDoPedido(p.id).then((t) => { if (vivo) setTrilha(t); });
     void buscar();
@@ -193,7 +199,11 @@ function DetalhePedido({ pedido: p, conta, onVoltar, onMudou }: { pedido: Pedido
     let vivo = true;
     async function buscar() {
       const { data } = await supabase().rpc("acompanhar_pedido_cliente", { p_pedido: p.id });
-      if (vivo) setMotoboys(((data ?? []) as { lat: number | null; lng: number | null; nome: string; foto?: string | null }[]).filter((m) => m.lat != null).map((m) => ({ lat: m.lat!, lng: m.lng!, nome: m.nome, foto: m.foto ?? null })));
+      const l = (data ?? []) as { lat: number | null; lng: number | null; nome: string; foto?: string | null; rota_planejada?: string | null; outras_paradas?: { lat: number; lng: number; tipo: "coleta" | "entrega"; feita: boolean }[] | null }[];
+      if (!vivo) return;
+      setMotoboys(l.filter((m) => m.lat != null).map((m) => ({ lat: m.lat!, lng: m.lng!, nome: m.nome, foto: m.foto ?? null })));
+      setPlanejada(l.find((m) => m.rota_planejada)?.rota_planejada ?? null);
+      setOutras(l.flatMap((m) => m.outras_paradas ?? []));
     }
     void buscar();
     const t = setInterval(buscar, 10_000);
@@ -207,7 +217,8 @@ function DetalhePedido({ pedido: p, conta, onVoltar, onMudou }: { pedido: Pedido
     toast("Pedido cancelado.", "ok");
     onMudou();
   }
-  const pinos: PinoParada[] = p.pontos.map((x, i) => ({ chave: x.id, lat: x.lat, lng: x.lng, tipo: x.tipo, rotulo: String(i + 1), concluida: x.status === "concluido" }));
+  const pinos: PinoParada[] = [...p.pontos.map((x, i) => ({ chave: x.id, lat: x.lat, lng: x.lng, tipo: x.tipo, rotulo: String(i + 1), concluida: x.status === "concluido" })),
+    ...(ve.has("outras_paradas") ? outras.map((x, i) => ({ chave: `o${i}`, lat: x.lat, lng: x.lng, tipo: x.tipo, rotulo: "·", concluida: x.feita })) : [])];
   const [foco, setFoco] = useState<{ lat: number; lng: number; vez: number } | null>(null);
   const podeCancelar = conta.pode_cancelar !== false && ["recebido", "aprovado", "roteirizado"].includes(p.status);
 
@@ -221,9 +232,10 @@ function DetalhePedido({ pedido: p, conta, onVoltar, onMudou }: { pedido: Pedido
         </div>
         <p className="dica" style={{ margin: 0 }}>{STATUS[p.status].dica}{p.recusa_motivo ? ` Motivo: ${p.recusa_motivo}` : ""}</p>
         <div className="cliente-mapa">
-          <MapaCorridas paradas={pinos} enquadrar={p.id} foco={foco} trilha={trilha}
-            restanteDe={motoboys[0] ? { lat: motoboys[0].lat, lng: motoboys[0].lng } : null}
-            motoboys={motoboys.map((m, i) => ({ id: `m${i}`, nome: m.nome, lat: m.lat, lng: m.lng, status: "em_corrida", foto: m.foto }))} />
+          <MapaCorridas paradas={pinos} enquadrar={p.id} foco={foco} trilha={trilha} rotaPlanejada={ve.has("planejada") ? planejada : null}
+            caminhoAuto={ve.has("planejada") || ve.has("restante") ? !planejada : false}
+            restanteDe={ve.has("restante") && motoboys[0] ? { lat: motoboys[0].lat, lng: motoboys[0].lng } : null}
+            motoboys={(ve.has("motoboy") ? motoboys : []).map((m, i) => ({ id: `m${i}`, nome: m.nome, lat: m.lat, lng: m.lng, status: "em_corrida", foto: m.foto }))} />
         </div>
         {p.cobranca === "pre_pago" && p.pagamento_status === "pendente" && !["cancelado", "recusado"].includes(p.status) && (
           <div className="cliente-pagar">

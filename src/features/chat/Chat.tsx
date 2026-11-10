@@ -56,7 +56,7 @@ export function Chat({ meuId, gestor, linkDe, anexoPendente, onAnexoEnviado }: {
   const [conversas, setConversas] = useState<Conversa[] | null>(null);
   const [aberta, setAberta] = useState<string | null>(null);
   const [mensagens, setMensagens] = useState<Mensagem[]>([]);
-  const [nomes, setNomes] = useState<Record<string, { nome: string; foto: string | null }>>({});
+  const [nomes, setNomes] = useState<Record<string, { nome: string; foto: string | null; papeis?: string[]; empresa?: string | null }>>({});
   const [texto, setTexto] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [novo, setNovo] = useState<"direta" | "grupo" | null>(null);
@@ -78,7 +78,7 @@ export function Chat({ meuId, gestor, linkDe, anexoPendente, onAnexoEnviado }: {
     supabase().rpc("chat_contatos").then(({ data }) => {
       const l = (data ?? []) as Contato[];
       setContatos(l);
-      setNomes((n) => ({ ...n, ...Object.fromEntries(l.map((c) => [c.id, { nome: c.nome, foto: c.foto }])) }));
+      setNomes((n) => ({ ...n, ...Object.fromEntries(l.map((c) => [c.id, { nome: c.nome, foto: c.foto, papeis: c.papeis, empresa: c.empresa }])) }));
     });
   }, []);
 
@@ -86,11 +86,9 @@ export function Chat({ meuId, gestor, linkDe, anexoPendente, onAnexoEnviado }: {
     const { data } = await supabase().from("chat_mensagens").select("*").eq("conversa_id", id).order("criada_em", { ascending: false }).limit(200);
     setMensagens(((data ?? []) as Mensagem[]).reverse());
     void supabase().rpc("chat_marcar_lida", { p_conversa: id }).then(() => carregarConversas());
-    const faltam = [...new Set(((data ?? []) as Mensagem[]).map((m) => m.autor_id).filter((x): x is string => Boolean(x)))];
-    if (faltam.length) {
-      const { data: pf } = await supabase().from("perfis").select("id,nome,foto_url").in("id", faltam);
-      setNomes((n) => ({ ...n, ...Object.fromEntries(((pf ?? []) as { id: string; nome: string; foto_url: string | null }[]).map((p) => [p.id, { nome: p.nome, foto: p.foto_url }])) }));
-    }
+    // nome, foto e cargos de quem escreveu (os selos ao lado do nome)
+    const { data: au } = await supabase().rpc("chat_autores", { p_conversa: id });
+    if (Array.isArray(au)) setNomes((n) => ({ ...n, ...Object.fromEntries((au as { id: string; nome: string; foto: string | null; papeis: string[]; empresa: string | null }[]).map((p) => [p.id, { nome: p.nome, foto: p.foto, papeis: p.papeis, empresa: p.empresa }])) }));
   }, [carregarConversas]);
   useEffect(() => { if (aberta) void carregarMensagens(aberta); else setMensagens([]); }, [aberta, carregarMensagens]);
   useEffect(() => { fim.current?.scrollIntoView({ block: "end" }); }, [mensagens.length]);
@@ -236,7 +234,7 @@ export function Chat({ meuId, gestor, linkDe, anexoPendente, onAnexoEnviado }: {
             <header className="chat-cabeca">
               <button type="button" className="icone chat-voltar" aria-label="Voltar" onClick={() => setAberta(null)}><ArrowLeft size={18} /></button>
               <Avatar nome={nomeConversa(atual)} foto={atual.foto} grupo={atual.tipo !== "direta"} />
-              <span><strong>{nomeConversa(atual)}</strong><small>{atual.tipo === "geral" ? "Toda a equipe" : atual.tipo === "grupo" ? `${atual.membros} pessoas` : "Mensagem direta"}</small></span>
+              <span><strong>{nomeConversa(atual)}</strong><small>{atual.tipo === "geral" ? "Toda a equipe" : atual.tipo === "grupo" ? `${atual.membros} pessoas` : "Mensagem direta"}{atual.tipo === "direta" && atual.outro && <SelosCargo papeis={nomes[atual.outro]?.papeis} empresa={nomes[atual.outro]?.empresa} />}</small></span>
               <span className="espaco" />
               <button type="button" className="icone" onClick={() => silenciar(atual)} aria-label={atual.silenciada ? "Ligar avisos" : "Silenciar"}>
                 {atual.silenciada ? <BellOff size={17} /> : <Bell size={17} />}
@@ -249,7 +247,7 @@ export function Chat({ meuId, gestor, linkDe, anexoPendente, onAnexoEnviado }: {
                 const mostrarAutor = !minha && atual.tipo !== "direta" && mensagens[i - 1]?.autor_id !== m.autor_id;
                 return (
                   <div key={m.id} className={`chat-msg ${minha ? "minha" : ""}`}>
-                    {mostrarAutor && <span className="chat-autor">{autor?.nome ?? "Alguém"}</span>}
+                    {mostrarAutor && <span className="chat-autor">{autor?.nome ?? "Alguém"}<SelosCargo papeis={autor?.papeis} empresa={autor?.empresa} /></span>}
                     <div className="chat-balao">
                       {m.apagada_em ? <em className="dica">Mensagem apagada</em> : <>
                         {m.anexo && cartao(m.anexo)}
@@ -282,4 +280,16 @@ export function Chat({ meuId, gestor, linkDe, anexoPendente, onAnexoEnviado }: {
 /** Abre o chat com um cartão pronto para mandar (pedido, rota, cliente…). */
 export function linkCompartilhar(base: string, a: Anexo) {
   return `${base}?anexo=${encodeURIComponent(JSON.stringify(a))}`;
+}
+
+
+/** Selos de cargo ao lado do nome (Dev, Gestor, Motoboy, Cliente). */
+export function SelosCargo({ papeis, empresa }: { papeis?: string[]; empresa?: string | null }) {
+  if (!papeis?.length) return null;
+  const ordem: [string, string][] = [["dev", "Dev"], ["gestor", "Gestor"], ["motoboy", "Motoboy"], ["cliente", "Cliente"]];
+  return (
+    <span className="chat-selos">
+      {ordem.filter(([k]) => papeis.includes(k)).map(([k, r]) => <span key={k} className={`chat-selo ${k}`} title={k === "cliente" && empresa ? `Cliente · ${empresa}` : r}>{r}</span>)}
+    </span>
+  );
 }
